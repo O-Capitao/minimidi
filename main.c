@@ -5,7 +5,29 @@
 
 #define ARG_MAX_LEN 100
 
-struct MidiFileHeader {
+
+// terminal stuff
+#define RESET   "\033[0m"
+#define BLACK   "\033[30m"      /* Black */
+#define RED     "\033[31m"      /* Red */
+#define GREEN   "\033[32m"      /* Green */
+#define YELLOW  "\033[33m"      /* Yellow */
+#define BLUE    "\033[34m"      /* Blue */
+#define MAGENTA "\033[35m"      /* Magenta */
+#define CYAN    "\033[36m"      /* Cyan */
+#define WHITE   "\033[37m"      /* White */
+#define BOLDBLACK   "\033[1m\033[30m"      /* Bold Black */
+#define BOLDRED     "\033[1m\033[31m"      /* Bold Red */
+#define BOLDGREEN   "\033[1m\033[32m"      /* Bold Green */
+#define BOLDYELLOW  "\033[1m\033[33m"      /* Bold Yellow */
+#define BOLDBLUE    "\033[1m\033[34m"      /* Bold Blue */
+#define BOLDMAGENTA "\033[1m\033[35m"      /* Bold Magenta */
+#define BOLDCYAN    "\033[1m\033[36m"      /* Bold Cyan */
+#define BOLDWHITE   "\033[1m\033[37m"      /* Bold White */
+
+#define TAB "   "
+
+struct MidiFileHeaderChunk {
     char chunkType[5];
     __uint32_t length;
     __uint16_t format;
@@ -13,14 +35,34 @@ struct MidiFileHeader {
     __uint16_t division;
 };
 
+struct MidiFileTrackEvent {
 
-void reverseCharArray(char *src, char *tgt, int len)
+};
+
+struct MidiFileTrackChunk {
+    char chunkType[5];
+    __uint32_t length;
+    char* trackChunkData;
+};
+
+void reverseCharArray(char* arr, int len)
 {
-    for (int i = 0; i < len; i++){
-        tgt[len-i-1] = src[i];
+    char aux;
+    for (int i = 0; i < len / 2; i++)
+    {
+        aux = arr[i];
+        arr[i] = arr[len-1-i];
+        arr[len-1-i] = aux;
     }
 }
 
+void extractNumberFromByteArray( void* tgt, char* src, int start_ind, int len )
+{
+    char extracted_bytes[len];
+    memcpy( extracted_bytes, &src[start_ind], len );
+    reverseCharArray( extracted_bytes, len );
+    memcpy(tgt, extracted_bytes, len);
+}
 
 void getSubstring(char *src_str, char* tgt_str, int start_index, int n_elements_to_copy, bool add_null_termination )
 {
@@ -32,65 +74,50 @@ void getSubstring(char *src_str, char* tgt_str, int start_index, int n_elements_
     }
 }
 
-struct MidiFileHeader readHeaderChunk(char *fileContents){
+// "Class" Methods
+struct MidiFileHeaderChunk readHeaderChunk(char *fileContents){
 
-    struct MidiFileHeader retval;
+    struct MidiFileHeaderChunk retval;
     getSubstring( fileContents, retval.chunkType, 0, 4, true );
 
-    char lenghtBytes[4];
-    char reversedLengthBytes[4];
+    
+    extractNumberFromByteArray( &(retval.length), fileContents, 4, 4 );
+    extractNumberFromByteArray( &(retval.format), fileContents, 8, 2 );
+    extractNumberFromByteArray( &(retval.ntrks), fileContents, 10, 2 );
+    extractNumberFromByteArray( &(retval.ntrks), fileContents, 10, 2 );
+    extractNumberFromByteArray( &(retval.division), fileContents, 12, 2 );
 
-    // ! NOTE:
-    // Midi num values -> always big endian 
-    getSubstring( fileContents, lenghtBytes, 4, 4, false );
-    reverseCharArray( lenghtBytes, reversedLengthBytes, 4 );
-    memcpy( &(retval.length), reversedLengthBytes, 4 );
+    printf(TAB GREEN "Header Parsed" RESET "\n");
 
-    // neext 2 bytes are for format
-    char formatBytes[2], 
-         reversedFormatBytes[2];
-
-    getSubstring( fileContents, formatBytes, 8, 2, false );
-    reverseCharArray( formatBytes, reversedFormatBytes, 2 );
-    memcpy( &(retval.format), reversedFormatBytes, 2 );
-
-
-    // neext 2 bytes are for number of tracks
-    char ntrkBytes[2], 
-         reversedNtrkBytes[2];
-
-    getSubstring( fileContents, ntrkBytes, 10, 2, false );
-    reverseCharArray( ntrkBytes, reversedNtrkBytes, 2 );
-    memcpy( &(retval.ntrks), reversedNtrkBytes, 2 );
-
-    // last 2 bytes are for divisin
-    char divBytes[2], 
-         reversedDivBytes[2];
-
-    getSubstring( fileContents, divBytes, 12, 2, false );
-    reverseCharArray( divBytes, reversedDivBytes, 2 );
-    memcpy( &(retval.division), reversedDivBytes, 2 );
+    printf(TAB TAB WHITE "Chunk Type:" RESET " %s \n", retval.chunkType);
+    printf(TAB TAB WHITE "Length of Header:" RESET " %i\n", retval.length );
+    printf(TAB TAB WHITE "Format Code:" RESET " %i.\n", retval.format);
+    printf(TAB TAB WHITE "Number Of Tracks:" RESET " %i.\n", retval.ntrks);
+    printf(TAB TAB WHITE "Division:" RESET " %i.\n", retval.division);
 
     return retval;
 }
 
 
+
+//------------------------------------------------------------------------------------------
 int main(int argc, char *argv[]){
 
     // safety for
     if (argc < 2){
-        printf( "\033[1;31mERROR!\033[0m : Please supply an argument.\n");
+        printf( RED "ERROR: " RESET "Please supply an argument.\n");
         return 1;
     }
 
     size_t sizeofarg = strlen(argv[1]);
     if (sizeofarg > ARG_MAX_LEN){
-        printf( "\033[1;31mERROR!\033[0m : Input arg is too long!\n");
+        printf( RED "ERROR: " RESET "Input arg is too long!\n");
+        return 1;
     }
 
     FILE *fileptr;
 
-    printf("parsing %s", argv[1]);
+    printf(WHITE "STARTING parse of %s\n\n" RESET, argv[1]);
     
     fileptr = fopen( argv[1], "rb" );
     char * buffer = 0;
@@ -117,15 +144,10 @@ int main(int argc, char *argv[]){
         fclose (fileptr);
     }
 
-    printf("buffer is %li bytes long.\n", strlen(buffer));
-
     // Parse The Midi File :)
-    struct MidiFileHeader header = readHeaderChunk(buffer);
-    printf("HEY! Got substring: %s \n\n", header.chunkType);
-    printf("Hey! Also here's the length of the thing: %i\n", header.length );
-    printf("Hey! Also here's the format code: %i.\n", header.format);
-    printf("Hey! Also here's the number of tracks: %i.\n", header.ntrks);
-    printf("Hey! Also here's the division: %i.\n", header.division);
+    struct MidiFileHeaderChunk header = readHeaderChunk(buffer);
+
+    free( buffer );
 
     return 0;
 }
