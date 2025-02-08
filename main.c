@@ -27,6 +27,8 @@
 
 #define TAB "   "
 
+typedef unsigned char _Byte;
+
 struct MidiFileHeaderChunk {
     char chunkType[5];
     __uint32_t length;
@@ -36,18 +38,18 @@ struct MidiFileHeaderChunk {
 };
 
 struct MidiFileTrackEvent {
-
+    
 };
 
 struct MidiFileTrackChunk {
     char chunkType[5];
     __uint32_t length;
-    char* trackChunkData;
+    _Byte* trackBinData;
 };
 
-void reverseCharArray(char* arr, int len)
+void reverseByteArray(_Byte* arr, int len)
 {
-    char aux;
+    _Byte aux;
     for (int i = 0; i < len / 2; i++)
     {
         aux = arr[i];
@@ -56,15 +58,38 @@ void reverseCharArray(char* arr, int len)
     }
 }
 
-void extractNumberFromByteArray( void* tgt, char* src, int start_ind, int len )
+// ! NOPE
+// dont do this !
+
+// bit trickier since involves shifting bytes
+// __uint16_t getDivisionFromByteArray( char* src ){
+//     char extractedBytes[2];
+//     __uint16_t division;
+
+//     memcpy( extractedBytes, &src[12], 2 );
+
+//     // shift shit
+//     for (int i = 0; i < 2; i++ ){
+//         extractedBytes[i] = extractedBytes[i] >> 1;
+//     }
+//     reverseCharArray( extractedBytes, 2 );
+
+//     memcpy(&division, extractedBytes, 2);
+
+//     return division;
+// }   
+
+void extractNumberFromByteArray( void* tgt, _Byte* src, int start_ind, int len )
 {
-    char extracted_bytes[len];
+    _Byte extracted_bytes[len];
     memcpy( extracted_bytes, &src[start_ind], len );
-    reverseCharArray( extracted_bytes, len );
+    reverseByteArray( extracted_bytes, len );
     memcpy(tgt, extracted_bytes, len);
 }
 
-void getSubstring(char *src_str, char* tgt_str, int start_index, int n_elements_to_copy, bool add_null_termination )
+
+
+void getSubstring(_Byte *src_str, char* tgt_str, int start_index, int n_elements_to_copy, bool add_null_termination )
 {
     memcpy( tgt_str, &src_str[start_index], n_elements_to_copy );
 
@@ -75,7 +100,8 @@ void getSubstring(char *src_str, char* tgt_str, int start_index, int n_elements_
 }
 
 // "Class" Methods
-struct MidiFileHeaderChunk readHeaderChunk(char *fileContents){
+struct MidiFileHeaderChunk readHeaderChunk( _Byte *fileContents )
+{
 
     struct MidiFileHeaderChunk retval;
     getSubstring( fileContents, retval.chunkType, 0, 4, true );
@@ -87,14 +113,30 @@ struct MidiFileHeaderChunk readHeaderChunk(char *fileContents){
     extractNumberFromByteArray( &(retval.ntrks), fileContents, 10, 2 );
     extractNumberFromByteArray( &(retval.division), fileContents, 12, 2 );
 
-    printf(TAB GREEN "Header Parsed" RESET "\n");
+    printf(TAB BOLDGREEN "- HEADER CHUNK:" RESET "\n");
 
     printf(TAB TAB WHITE "Chunk Type:" RESET " %s \n", retval.chunkType);
-    printf(TAB TAB WHITE "Length of Header:" RESET " %i\n", retval.length );
+    printf(TAB TAB WHITE "Chunk Length:" RESET " %i\n", retval.length );
     printf(TAB TAB WHITE "Format Code:" RESET " %i.\n", retval.format);
     printf(TAB TAB WHITE "Number Of Tracks:" RESET " %i.\n", retval.ntrks);
     printf(TAB TAB WHITE "Division:" RESET " %i.\n", retval.division);
 
+    return retval;
+}
+
+struct MidiFileTrackChunk readTrackChunk( _Byte *fileContent )
+{
+    struct MidiFileTrackChunk retval;
+
+    getSubstring( fileContent, retval.chunkType, 14, 4, true );
+    extractNumberFromByteArray( &(retval.length), fileContent, 18, 4 );
+
+
+    printf(TAB BOLDGREEN "- TRACK CHUNK:" RESET "\n");
+    printf(TAB TAB WHITE "Chunk Type:" RESET " %s\n", retval.chunkType );
+    printf(TAB TAB WHITE "Chunk Length:" RESET " %i\n", retval.length );
+    
+    
     return retval;
 }
 
@@ -120,7 +162,7 @@ int main(int argc, char *argv[]){
     printf(WHITE "STARTING parse of %s\n\n" RESET, argv[1]);
     
     fileptr = fopen( argv[1], "rb" );
-    char * buffer = 0;
+    _Byte * buffer = 0;
     long length;
 
 
@@ -146,6 +188,8 @@ int main(int argc, char *argv[]){
 
     // Parse The Midi File :)
     struct MidiFileHeaderChunk header = readHeaderChunk(buffer);
+    struct MidiFileTrackChunk track = readTrackChunk(buffer);
+
 
     free( buffer );
 

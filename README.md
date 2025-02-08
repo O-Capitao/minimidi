@@ -4,7 +4,10 @@ Dumbest midi reader ever
 ## about midi:
 https://ccrma.stanford.edu/~craig/14q/midifile/MidiFileFormat.html
 
-## chunks
+
+http://midi.teragonaudio.com/tech/midispec.htm
+http://midi.teragonaudio.com/tech/midifile.htm
+
 Each chunk has a 4-character ASCII type and a 32-bit length value
 
 ### Header
@@ -29,5 +32,9 @@ this means:
 
 - *format code* -> sepre 0
 - *ntrks* -> sempre 1
-- *division* -> sempre 960 (standard de facto)
+- *division* -> sempre 960 (standard de facto) *NOPE!* -> set to **96 ppqn**
+
+
+
+
 
