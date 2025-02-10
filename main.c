@@ -29,6 +29,10 @@
 
 typedef unsigned char _Byte;
 
+
+
+
+
 struct MidiFileHeaderChunk {
     char chunkType[5];
     __uint32_t length;
@@ -47,6 +51,7 @@ struct MidiFileTrackChunk {
     _Byte* trackBinData;
 };
 
+
 void reverseByteArray(_Byte* arr, int len)
 {
     _Byte aux;
@@ -57,6 +62,10 @@ void reverseByteArray(_Byte* arr, int len)
         arr[len-1-i] = aux;
     }
 }
+
+
+
+
 
 // ! NOPE
 // dont do this !
@@ -136,6 +145,12 @@ struct MidiFileTrackChunk readTrackChunk( _Byte *fileContent )
     printf(TAB TAB WHITE "Chunk Type:" RESET " %s\n", retval.chunkType );
     printf(TAB TAB WHITE "Chunk Length:" RESET " %i\n", retval.length );
     
+    unsigned int outer_cntr = 0;
+
+    while ( outer_cntr < retval.length )
+    {
+        
+    }
     
     return retval;
 }
