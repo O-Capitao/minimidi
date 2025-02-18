@@ -3,38 +3,18 @@
 #include "stdlib.h"
 #include "stdbool.h"
 
+#include "mylog.h"
+
 #define ARG_MAX_LEN 100
-
-
-// terminal stuff
-#define RESET   "\033[0m"
-#define BLACK   "\033[30m"      /* Black */
-#define RED     "\033[31m"      /* Red */
-#define GREEN   "\033[32m"      /* Green */
-#define YELLOW  "\033[33m"      /* Yellow */
-#define BLUE    "\033[34m"      /* Blue */
-#define MAGENTA "\033[35m"      /* Magenta */
-#define CYAN    "\033[36m"      /* Cyan */
-#define WHITE   "\033[37m"      /* White */
-#define BOLDBLACK   "\033[1m\033[30m"      /* Bold Black */
-#define BOLDRED     "\033[1m\033[31m"      /* Bold Red */
-#define BOLDGREEN   "\033[1m\033[32m"      /* Bold Green */
-#define BOLDYELLOW  "\033[1m\033[33m"      /* Bold Yellow */
-#define BOLDBLUE    "\033[1m\033[34m"      /* Bold Blue */
-#define BOLDMAGENTA "\033[1m\033[35m"      /* Bold Magenta */
-#define BOLDCYAN    "\033[1m\033[36m"      /* Bold Cyan */
-#define BOLDWHITE   "\033[1m\033[37m"      /* Bold White */
-
-#define TAB "   "
 
 typedef unsigned char _Byte;
 
 
 
-
+MyLogger *logger_ptr = NULL;
 
 struct MidiFileHeaderChunk {
-    char chunkType[5];
+    unsigned char chunkType[5];
     __uint32_t length;
     __uint16_t format;
     __uint16_t ntrks;
@@ -42,15 +22,18 @@ struct MidiFileHeaderChunk {
 };
 
 struct MidiFileTrackEvent {
-    
+    unsigned long delta_ticks;
+    _Byte evt_code[2];
+    _Byte evt_data[2]; // not always 2, but its 1 or 2, moving on....
 };
 
 struct MidiFileTrackChunk {
-    char chunkType[5];
+    unsigned char chunkType[5];
     __uint32_t length;
     _Byte* trackBinData;
+    size_t n_events;
+    struct MidiFileTrackEvent *event_arr;
 };
-
 
 void reverseByteArray(_Byte* arr, int len)
 {
@@ -63,31 +46,6 @@ void reverseByteArray(_Byte* arr, int len)
     }
 }
 
-
-
-
-
-// ! NOPE
-// dont do this !
-
-// bit trickier since involves shifting bytes
-// __uint16_t getDivisionFromByteArray( char* src ){
-//     char extractedBytes[2];
-//     __uint16_t division;
-
-//     memcpy( extractedBytes, &src[12], 2 );
-
-//     // shift shit
-//     for (int i = 0; i < 2; i++ ){
-//         extractedBytes[i] = extractedBytes[i] >> 1;
-//     }
-//     reverseCharArray( extractedBytes, 2 );
-
-//     memcpy(&division, extractedBytes, 2);
-
-//     return division;
-// }   
-
 void extractNumberFromByteArray( void* tgt, _Byte* src, int start_ind, int len )
 {
     _Byte extracted_bytes[len];
@@ -96,9 +54,7 @@ void extractNumberFromByteArray( void* tgt, _Byte* src, int start_ind, int len )
     memcpy(tgt, extracted_bytes, len);
 }
 
-
-
-void getSubstring(_Byte *src_str, char* tgt_str, int start_index, int n_elements_to_copy, bool add_null_termination )
+void getSubstring(_Byte *src_str, unsigned char* tgt_str, int start_index, int n_elements_to_copy, bool add_null_termination )
 {
     memcpy( tgt_str, &src_str[start_index], n_elements_to_copy );
 
@@ -106,6 +62,62 @@ void getSubstring(_Byte *src_str, char* tgt_str, int start_index, int n_elements
     {
         tgt_str[ n_elements_to_copy ] = '\0';
     }
+}
+
+size_t readVLQ_DeltaT( _Byte *bytes, size_t len, unsigned long *val_ptr)
+{
+    size_t _index = 0;
+    _Byte _curr_byte;
+    const _Byte _sign_bit_mask = 0b1000000;
+    const _Byte _7_last_bits_mask = 0b0111111;
+    unsigned long retval = 0; // 4 bytes maximum....
+
+    // for (int i = 0; i < len;  i++ ){
+    //     printf("%b\n", bytes[i]);
+    // }
+
+    while ( _index < len )
+    {
+        // grab a byte
+        _curr_byte = bytes[_index++];
+        printf("    grabbed byte: %b - %x \n", _curr_byte, _curr_byte );
+
+        // accumulate accumulator with least significant 7 bits of curr byte (base 128)        
+        // shift accumulated value 7 bits to the left
+        printf("    retval is %b before ops.\n", retval );
+        retval<<=7;
+        printf("    shifted 7 to the left: retval = %b .\n", retval );
+        // sum with 7 last bits of curr byte
+        retval += (_curr_byte & _7_last_bits_mask);
+        printf("    sum with curr byte: retval = %b .\n\n", retval );
+        // if signal bit == 0, this is the last byte in the VLQ
+        if ( (_curr_byte & _sign_bit_mask) == 0)
+        {
+            break;
+        }
+    }
+
+    *val_ptr = retval;
+    printf("    VLQ is %lu bytes long.\n", _index );
+    return _index; 
+}
+
+void parseEvents( /* struct MidiFileTrackEvent *evts,*/ _Byte *evts_chunk, size_t chunk_len  ){
+    size_t byte_counter = 0;
+    size_t event_counter = 0;
+    // size_t var_len_quant_delta_t = 0;
+    // struct MidiFileTrackEvent evts[100];
+    
+    while ( byte_counter < 1 ) //chunk_len )
+    {
+        struct MidiFileTrackEvent evt;
+        byte_counter += readVLQ_DeltaT( evts_chunk, chunk_len, &(evt.delta_ticks) );
+
+        printf("Parsed Event number %lu:\n  " CYAN "ticks=%lu\n" RESET, event_counter, evt.delta_ticks );
+
+        event_counter ++;
+    }
+
 }
 
 // "Class" Methods
@@ -133,60 +145,62 @@ struct MidiFileHeaderChunk readHeaderChunk( _Byte *fileContents )
     return retval;
 }
 
-struct MidiFileTrackChunk readTrackChunk( _Byte *fileContent )
+struct MidiFileTrackChunk readTrackChunk( _Byte *fileContent, size_t startIndex, size_t totalLen )
 {
     struct MidiFileTrackChunk retval;
 
-    getSubstring( fileContent, retval.chunkType, 14, 4, true );
-    extractNumberFromByteArray( &(retval.length), fileContent, 18, 4 );
-
+    getSubstring( fileContent, retval.chunkType, startIndex, 4, true );
+    extractNumberFromByteArray( &(retval.length), fileContent, startIndex + 4, 4 );
+    getSubstring(fileContent, retval.trackBinData, startIndex + 8, retval.length, false );
 
     printf(TAB BOLDGREEN "- TRACK CHUNK:" RESET "\n");
     printf(TAB TAB WHITE "Chunk Type:" RESET " %s\n", retval.chunkType );
     printf(TAB TAB WHITE "Chunk Length:" RESET " %i\n", retval.length );
-    
-    unsigned int outer_cntr = 0;
 
-    while ( outer_cntr < retval.length )
-    {
-        
-    }
+    parseEvents( retval.trackBinData, retval.length );
     
     return retval;
 }
 
 
 
-//------------------------------------------------------------------------------------------
-int main(int argc, char *argv[]){
+int main( int argc, char *argv[] )
+{
+
+    logger_ptr = MyLogger__create("./myfile.log");
 
     // safety for
     if (argc < 2){
-        printf( RED "ERROR: " RESET "Please supply an argument.\n");
+        MyLogger_error( logger_ptr, "Please supply an argument." );
+        MyLogger_destroy(logger_ptr);
         return 1;
     }
 
     size_t sizeofarg = strlen(argv[1]);
     if (sizeofarg > ARG_MAX_LEN){
-        printf( RED "ERROR: " RESET "Input arg is too long!\n");
+        MyLogger_error( logger_ptr, "Input arg is too long." );
+        MyLogger_destroy(logger_ptr);
         return 1;
     }
 
     FILE *fileptr;
 
-    printf(WHITE "STARTING parse of %s\n\n" RESET, argv[1]);
+    MyLogger_success( logger_ptr, "Parsed Inputs." );
+    MyLogger_logStr(logger_ptr, "STARTING parse of ", argv[1]);
     
     fileptr = fopen( argv[1], "rb" );
     _Byte * buffer = 0;
-    long length;
+    size_t length;
 
+    MyLogger_flush(logger_ptr);
 
     if (fileptr)
     {
         fseek (fileptr, 0, SEEK_END);
         length = ftell (fileptr);
 
-        printf("File is %li bytes long.\n", length);
+        // printf("File is %li bytes long.\n", length);
+        MyLogger_logInt(logger_ptr, "File Len: ", length);
 
         fseek (fileptr, 0, SEEK_SET);
         buffer = malloc (length);
@@ -195,7 +209,8 @@ int main(int argc, char *argv[]){
         {
             // fread returns read bytes.
             int freadres = fread (buffer, 1, length, fileptr);
-            printf("fread returns %i\n", freadres);
+            // printf("fread returns %i\n", freadres);
+            MyLogger_logInt(logger_ptr, "Read Bytes: ", freadres);
         }
 
         fclose (fileptr);
@@ -203,10 +218,11 @@ int main(int argc, char *argv[]){
 
     // Parse The Midi File :)
     struct MidiFileHeaderChunk header = readHeaderChunk(buffer);
-    struct MidiFileTrackChunk track = readTrackChunk(buffer);
+    // headeer chunk is ! ALWAYS ! 14 bytes
+    struct MidiFileTrackChunk track = readTrackChunk(buffer, 14, length );
 
 
     free( buffer );
-
+    MyLogger_destroy(logger_ptr);
     return 0;
 }
