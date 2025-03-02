@@ -1,7 +1,6 @@
 #pragma once
 
-
-
+typedef unsigned char _Byte;
 
 // terminal stuff
 #define RESET   "\033[0m"
@@ -24,27 +23,3 @@
 
 #define TAB "   "
 
-#define LOG_BUFFER_LENGTH 512
-#define MAX_LOG_LINE 128
-
-
-#include "stdio.h"
-
-typedef struct MyLogger
-{
-    FILE *logfile;
-    char buffer[ LOG_BUFFER_LENGTH ];
-    char auxline[ MAX_LOG_LINE ];
-    size_t buffer_ind;
-
-} MyLogger;
-
-MyLogger *MyLogger__create( char* filename );
-void MyLogger_flush( MyLogger *self );
-void MyLogger_destroy( MyLogger *self );
-
-void MyLogger_trace( MyLogger *self, char *msg );
-void MyLogger_error( MyLogger *self, char *msg );
-void MyLogger_success( MyLogger *self, char *msg );
-void MyLogger_logInt( MyLogger *self, char *msg, int val );
-void MyLogger_logStr( MyLogger *self, char *msg, char *val );
