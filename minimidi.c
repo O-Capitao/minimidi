@@ -97,6 +97,54 @@ uint8_t getMidiDataByteCount(MidiStatusCode status) {
     }
 }
 
+void printNote(MidiNote note) {
+    switch (note.note) {
+        case C:
+            printf("C");
+            break;
+        case Cs:
+            printf("C#");
+            break;
+        case D:
+            printf("D");
+            break;
+        case Ds:
+            printf("D#");
+            break;
+        case E:
+            printf("E");
+            break;
+        case F:
+            printf("F");
+            break;
+        case Fs:
+            printf("F#");
+            break;
+        case G:
+            printf("G");
+            break;
+        case Gs:
+            printf("G#");
+            break;
+        case A:
+            printf("A");
+            break;
+        case As:
+            printf("A#");
+            break;
+        case B:
+            printf("B");
+            break;
+        default:
+            printf("Invalid note\n");
+            break;
+    }
+
+    printf(" Oct: %hu\n", note.octave );
+}
+
+
+
 MidiNote eventDataBytesToNote( _Byte eventDataByte ){
     MidiNote result;
     
@@ -179,9 +227,10 @@ void parseEvents( /* struct MidiFileTrackEvent *evts,*/ _Byte *evts_chunk, size_
     // size_t var_len_quant_delta_t = 0;
     // struct MidiFileTrackEvent evts[100];
     
-    while ( byte_counter < 1 ) //chunk_len )
+    while ( byte_counter < chunk_len )
     {
         struct MidiFileTrackEvent evt;
+        evts_chunk += byte_counter;
 
         // Event start (ticks)
         byte_counter += readVLQ_DeltaT( evts_chunk, chunk_len, &(evt.delta_ticks) );
@@ -196,10 +245,25 @@ void parseEvents( /* struct MidiFileTrackEvent *evts,*/ _Byte *evts_chunk, size_
         printMidiStatusCode( evt.status_code );
         byte_counter++;
 
-        uint8_t dataBytes = getMidiDataByteCount( evt.status_code );
+        uint8_t dataBytes_count = getMidiDataByteCount( evt.status_code );
+        printf( TAB YELLOW "Event has %i data bytes" RESET, dataBytes_count);
+        // extract databytes
+        // when do we care?
+        //  when evt is a Note On, and never elses
+        if (evt.status_code == MIDI_NOTE_ON )
+        {
+            evt.note = eventDataBytesToNote(evts_chunk[byte_counter]);
+            printNote(evt.note);
+        }
+        byte_counter += dataBytes_count;
 
+        printf(TAB "Finishing %linth loop, byte_counter=%li.\n", event_counter, byte_counter);
+
+        // evts_chunk += byte_counter;
+        // byte_counter = 0;
 
         event_counter ++;
+
     }
 
 }

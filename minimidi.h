@@ -35,10 +35,14 @@ typedef enum Note {
     B  = 11
 } Note;
 
+
+
 typedef struct {
     Note note;
-    short octave;
+    unsigned short octave;
 } MidiNote;
+
+
 
 typedef struct MidiFileHeaderChunk {
     unsigned char chunkType[5];
@@ -51,8 +55,8 @@ typedef struct MidiFileHeaderChunk {
 typedef struct MidiFileTrackEvent {
     unsigned long delta_ticks;
     MidiStatusCode status_code;
-    // _Byte evt_code[2];
     _Byte evt_data[2];
+    MidiNote note;
 } MidiFileTrackEvent;
 
 typedef struct MidiFileTrackChunk {
@@ -68,6 +72,7 @@ MidiStatusCode getMidiStatusCode( _Byte *byte);
 void printMidiStatusCode(MidiStatusCode status);
 uint8_t getMidiDataByteCount(MidiStatusCode status);
 MidiNote eventDataBytesToNote( _Byte eventDataByte);
+void printNote(MidiNote note);
 
 // utility
 void reverseByteArray(_Byte* arr, int len);
