@@ -197,8 +197,8 @@ size_t readVLQ_DeltaT( _Byte *bytes, size_t len, unsigned long *val_ptr)
 {
     size_t _index = 0;
     _Byte _curr_byte;
-    const _Byte _sign_bit_mask = 0b1000000;
-    const _Byte _7_last_bits_mask = 0b0111111;
+    const _Byte _sign_bit_mask =    0b10000000;
+    const _Byte _7_last_bits_mask = 0b01111111;
     unsigned long retval = 0; // 4 bytes maximum....
 
     while ( _index < len )
@@ -217,6 +217,8 @@ size_t readVLQ_DeltaT( _Byte *bytes, size_t len, unsigned long *val_ptr)
     }
 
     *val_ptr = retval;
+
+    printf(BOLDYELLOW "-> processed %i bytes for VLQ.\n" RESET, _index);
     return _index;
 }
 
@@ -224,40 +226,59 @@ void parseEvents( /* struct MidiFileTrackEvent *evts,*/ _Byte *evts_chunk, size_
     size_t byte_counter = 0;
     size_t event_counter = 0;
 
-    // size_t var_len_quant_delta_t = 0;
-    // struct MidiFileTrackEvent evts[100];
+    // Last status byte for running status handling.
+    _Byte lastStatusByte = 0;
     
     while ( byte_counter < chunk_len )
     {
+        printf(BOLDWHITE "Starting grab %ith byte.\n", byte_counter);
         struct MidiFileTrackEvent evt;
         evts_chunk += byte_counter;
 
-        // Event start (ticks)
         byte_counter += readVLQ_DeltaT( evts_chunk, chunk_len, &(evt.delta_ticks) );
   
-        printf("Parsed Event number %lu:\n  " CYAN "ticks=%lu\n" RESET, event_counter, evt.delta_ticks );
+        printf(BOLDWHITE "Parsed Event number %lu:\n  " RESET CYAN "ticks=%lu\n" RESET, event_counter, evt.delta_ticks );
         printf(TAB "After moving, counter is at %lu.\n", byte_counter);
+
         // extract next byte -> Midi Event Status Code
         _Byte nextByte = evts_chunk[byte_counter];
-        evt.status_code = getMidiStatusCode( &nextByte );
         
-        printf( TAB GREEN "Status Code: " RESET );
+        if (nextByte & 0x80) {
+            // This is a new status byte (has the high bit set)
+            evt.status_code = getMidiStatusCode(&nextByte);
+            lastStatusByte = nextByte;  // Remember for running status
+            byte_counter++;
+        } else {
+            // No new status byte — use running status
+            printf( TAB TAB RED "Status is Running!\n" RESET );
+            nextByte = lastStatusByte;
+            evt.status_code = getMidiStatusCode(&nextByte);
+            // Note: byte_counter not incremented here, since there's no status byte.
+        }
+        
+        printf( TAB TAB GREEN "Status Code: " RESET );
         printMidiStatusCode( evt.status_code );
-        byte_counter++;
 
         uint8_t dataBytes_count = getMidiDataByteCount( evt.status_code );
-        printf( TAB YELLOW "Event has %i data bytes" RESET, dataBytes_count);
+        printf( TAB TAB YELLOW "Event has %i data bytes" RESET, dataBytes_count);
+
+        if (evt.status_code == MIDI_INVALID) {
+            printf(RED "Invalid status byte detected — aborting!\n" RESET);
+            return;
+        }
+
+ 
         // extract databytes
         // when do we care?
         //  when evt is a Note On, and never elses
-        if (evt.status_code == MIDI_NOTE_ON )
+        if (evt.status_code == MIDI_NOTE_ON || evt.status_code == MIDI_NOTE_OFF)
         {
             evt.note = eventDataBytesToNote(evts_chunk[byte_counter]);
             printNote(evt.note);
         }
         byte_counter += dataBytes_count;
 
-        printf(TAB "Finishing %linth loop, byte_counter=%li.\n", event_counter, byte_counter);
+        printf(TAB TAB "Finishing %linth loop, byte_counter=%li.\n\n\n", event_counter, byte_counter);
 
         // evts_chunk += byte_counter;
         // byte_counter = 0;
