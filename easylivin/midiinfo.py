@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/home/capitaof/THE_CODEZ/minimidi/easylivin/izzyenv/bin/python3
 from mido import MidiFile
 import sys
 
