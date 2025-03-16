@@ -54,11 +54,10 @@ int main( int argc, char *argv[] )
     }
 
     // Parse The Midi File :)
-    MidiFileHeaderChunk header = readHeaderChunk(buffer);
-    // headeer chunk is ! ALWAYS ! 14 bytes
-    MidiFileTrackChunk track = readTrackChunk(buffer, 14, length );
-
+    MiniMidi_FileHeader header = read_header_chunk(buffer);
+    MiniMidi_Track *track = read_track_chunk(buffer, 14, length );
 
     free( buffer );
+    free( track );
     return 0;
 }

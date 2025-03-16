@@ -4,9 +4,15 @@
 #include "assert.h"
 #include "stdio.h"
 
+#define DEBUG 1
 
-
-void print_byte_as_binary(_Byte *byte, int little_endian) {
+/****************************************************************************************
+*
+*
+*   -> Utility  Functions
+****************************************************************************************/
+void print_byte_as_binary(_Byte *byte, int little_endian)
+{
     if (byte == NULL) {
         printf("Null pointer received.\n");
         return;
@@ -23,13 +29,12 @@ void print_byte_as_binary(_Byte *byte, int little_endian) {
             printf("%c", (*byte & (1 << i)) ? '1' : '0');
         }
     }
-    
-    // printf("\n");
 }
 
 
 // Function to get MIDI Status Code from a byte
-MidiStatusCode getMidiStatusCode( _Byte *byte) {
+MidiStatusCode get_midi_status_code( _Byte *byte)
+{
     // Extract the status nibble (upper 4 bits)
     _Byte status = *byte & 0xF0;
     
@@ -60,7 +65,8 @@ MidiStatusCode getMidiStatusCode( _Byte *byte) {
     }
 }
 
-void printMidiStatusCode(MidiStatusCode status) {
+void print_midi_status_code(MidiStatusCode status)
+{
     printf(CYAN "MIDI Status: " RESET);
     
     switch (status) {
@@ -97,7 +103,9 @@ void printMidiStatusCode(MidiStatusCode status) {
     }
 }
 
-uint8_t getMidiDataByteCount(MidiStatusCode status) {
+uint8_t get_midi_data_byte_count(MidiStatusCode status)
+{
+
     switch (status) {
         case MIDI_NOTE_OFF:        // 0x80
         case MIDI_NOTE_ON:         // 0x90
@@ -121,7 +129,30 @@ uint8_t getMidiDataByteCount(MidiStatusCode status) {
     }
 }
 
-void printNote(MidiNote note) {
+MidiNote event_data_bytes_to_note( _Byte event_data_byte )
+{
+
+    MidiNote result;
+    
+    // Ensure note_number is in valid MIDI range (0-127)
+    if (event_data_byte > 127) {
+        event_data_byte = 127;  // Clamp to max MIDI value
+    }
+    
+    // Extract chromatic note (0-11) using modulo
+    result.note = (Note)(event_data_byte % 12);
+    
+    // Calculate octave
+    // MIDI note 0 = C-1, 12 = C0, 24 = C1, ..., 60 = C4, etc.
+    // So we divide by 12 and subtract 1 to get standard octave numbers
+    result.octave = (event_data_byte / 12) - 1;
+    
+    return result;
+}
+
+void print_midi_note(MidiNote note)
+{
+
     switch (note.note) {
         case C:
             printf("C");
@@ -167,33 +198,10 @@ void printNote(MidiNote note) {
     printf(" Oct: %hu ", note.octave );
 }
 
-
-
-MidiNote eventDataBytesToNote( _Byte eventDataByte ){
-
-    // printf(TAB TAB "Note N:%i\n" RESET, eventDataByte );
-    MidiNote result;
-    
-    // Ensure note_number is in valid MIDI range (0-127)
-    if (eventDataByte > 127) {
-        eventDataByte = 127;  // Clamp to max MIDI value
-    }
-    
-    // Extract chromatic note (0-11) using modulo
-    result.note = (Note)(eventDataByte % 12);
-    
-    // Calculate octave
-    // MIDI note 0 = C-1, 12 = C0, 24 = C1, ..., 60 = C4, etc.
-    // So we divide by 12 and subtract 1 to get standard octave numbers
-    result.octave = (eventDataByte / 12) - 1;
-    
-    return result;
-}
-
-void reverseByteArray(_Byte* arr, int len)
+void reverse_byte_array(_Byte* arr, size_t len)
 {
     _Byte aux;
-    for (int i = 0; i < len / 2; i++)
+    for (size_t i = 0; i < len / 2; i++)
     {
         aux = arr[i];
         arr[i] = arr[len-1-i];
@@ -201,15 +209,16 @@ void reverseByteArray(_Byte* arr, int len)
     }
 }
 
-void extractNumberFromByteArray( void* tgt, _Byte* src, int start_ind, int len )
+void extract_number_from_byte_array( void* tgt, _Byte* src, size_t start_ind, size_t len )
 {
     _Byte extracted_bytes[len];
     memcpy( extracted_bytes, &src[start_ind], len );
-    reverseByteArray( extracted_bytes, len );
+
+    reverse_byte_array( extracted_bytes, len );
     memcpy(tgt, extracted_bytes, len);
 }
 
-void getSubstring(_Byte *src_str, unsigned char* tgt_str, int start_index, int n_elements_to_copy, bool add_null_termination )
+void get_substring(_Byte *src_str, _Byte* tgt_str, size_t start_index, size_t n_elements_to_copy, bool add_null_termination )
 {
     memcpy( tgt_str, &src_str[start_index], n_elements_to_copy );
 
@@ -219,13 +228,15 @@ void getSubstring(_Byte *src_str, unsigned char* tgt_str, int start_index, int n
     }
 }
 
-size_t readVLQ_DeltaT( _Byte *bytes, size_t len, unsigned long *val_ptr)
+size_t read_VLQ_delta_t( _Byte *bytes, size_t len, uint64_t *val_ptr)
 {
     size_t _index = 0;
     _Byte _curr_byte;
 
-    /* DEBUG SHIT */ printf(TAB TAB "processing VLQ :: ");
 
+#if DEBUG
+    /* DEBUG IT */ printf(TAB TAB "processing VLQ :: ");
+#endif
 
     const _Byte _sign_bit_mask =    0x80; // 0b10000000
     const _Byte _7_last_bits_mask = 0x7F; // 0b01111111
@@ -237,8 +248,8 @@ size_t readVLQ_DeltaT( _Byte *bytes, size_t len, unsigned long *val_ptr)
         // grab a byte
         _curr_byte = bytes[_index++];
         
-        /* DEBUG SHIT */ print_byte_as_binary(&_curr_byte, 0 );
-        /* DEBUG SHIT */ printf(" ");
+        /* DEBUG IT */ print_byte_as_binary(&_curr_byte, 0 );
+        /* DEBUG IT */ printf(" ");
         
         retval<<=7;
         retval += ( _curr_byte & _7_last_bits_mask );
@@ -255,7 +266,13 @@ size_t readVLQ_DeltaT( _Byte *bytes, size_t len, unsigned long *val_ptr)
     return _index;
 }
 
-void parseEvents( /* struct MidiFileTrackEvent *evts,*/ _Byte *evts_chunk, size_t chunk_len  ){
+/****************************************************************************************
+*
+*
+*   -> Main Struct Methods
+****************************************************************************************/
+void parse_track_events( MiniMidi_Track *track, _Byte *evts_chunk )
+{
     size_t _byte_counter = 0;
     size_t _event_counter = 0;
     size_t _debug_event_byte_count = 0;
@@ -265,55 +282,55 @@ void parseEvents( /* struct MidiFileTrackEvent *evts,*/ _Byte *evts_chunk, size_
     // _Byte *_next_byte = NULL;
     uint8_t _data_bytes_count = 0;
 
-    while ( _byte_counter < chunk_len )
+    while ( _byte_counter < track->length )
     {
-        
-        /* DEBUG SHIT */_debug_event_byte_count = _byte_counter;
-        /* DEBUG SHIT */ printf(BOLDWHITE "Starting grab %lith byte. byte_counter=%li\n" RESET, (_byte_counter + 1), _byte_counter);
+#if DEBUG
+        /* DEBUG IT */_debug_event_byte_count = _byte_counter;
+        /* DEBUG IT */ printf(BOLDWHITE "Starting grab %lith byte. byte_counter=%li\n" RESET, (_byte_counter + 1), _byte_counter);
+#endif
 
 
-
-        struct MidiFileTrackEvent evt;
-        _byte_counter += readVLQ_DeltaT( evts_chunk + _byte_counter, chunk_len - _byte_counter, &(evt.delta_ticks));
-
+        struct MiniMidi_Event evt;
+        _byte_counter += read_VLQ_delta_t( evts_chunk + _byte_counter, track->length - _byte_counter, &(evt.delta_ticks));
 
 
-        /* DEBUG SHIT */ printf(BOLDWHITE "Parsed Event number %lu:\n  " RESET CYAN "ticks=%lu\n" RESET, _event_counter, evt.delta_ticks );
-        /* DEBUG SHIT */ printf(TAB "After moving, counter is at %lu.\n", _byte_counter);      
-        /* DEBUG SHIT */ printf(TAB TAB "parseEvents::Next Bite is ");
-        /* DEBUG SHIT */ print_byte_as_binary(evts_chunk + _byte_counter, 0);
-        /* DEBUG SHIT */ printf("\n");
+#if DEBUG
+        /* DEBUG IT */ printf(BOLDWHITE "Parsed Event number %lu:\n  " RESET CYAN "ticks=%lu\n" RESET, _event_counter, evt.delta_ticks );
+        /* DEBUG IT */ printf(TAB "After moving, counter is at %lu.\n", _byte_counter);      
+        /* DEBUG IT */ printf(TAB TAB "parseEvents::Next Bite is ");
+        /* DEBUG IT */ print_byte_as_binary(evts_chunk + _byte_counter, 0);
+        /* DEBUG IT */ printf("\n");
+#endif
 
-
-        // if (nextByte >= 0x80) { // 0b10000000k
         if ( *(evts_chunk + _byte_counter) >= 0x80 )
         {
             // This is a new status byte (has the high bit set)
-            evt.status_code = getMidiStatusCode((evts_chunk + _byte_counter));
+            evt.status_code = get_midi_status_code((evts_chunk + _byte_counter));
             _last_status_byte = (evts_chunk + _byte_counter);  // Remember for running status
             _byte_counter++;
 
         } else {
             // No new status byte — use running status
-            /* DEBUG SHIT */ printf( TAB TAB RED "Status is Running!\n" RESET );
-            evt.status_code = getMidiStatusCode(_last_status_byte);
+#if DEBUG
+            /* DEBUG IT */ printf( TAB TAB RED "Status is Running!\n" RESET );
+#endif
+
+            evt.status_code = get_midi_status_code(_last_status_byte);
             // Note: byte_counter not incremented here, since there's no status byte.
         }
-        
-
-
 
         if (evt.status_code == MIDI_INVALID) {
             printf(RED "Invalid status byte detected — aborting!\n" RESET);
             return;
         }
-
-         /* DEBUG SHIT */ printf( TAB TAB GREEN "Status Code: " RESET );
-         /* DEBUG SHIT */ printMidiStatusCode( evt.status_code );
-
-         _data_bytes_count = getMidiDataByteCount( evt.status_code );
-        /* DEBUG SHIT */ printf( TAB TAB "Event has %i data bytes: " RESET, _data_bytes_count);
-
+        /* DEBUG IT */ printf( TAB TAB GREEN "Status Code: " RESET );
+#if DEBUG
+         /* DEBUG IT */ print_midi_status_code( evt.status_code );
+#endif
+         _data_bytes_count = get_midi_data_byte_count( evt.status_code );
+#if DEBUG
+        /* DEBUG IT */ printf( TAB TAB "Event has %li data bytes: " RESET, _data_bytes_count);
+#endif
         
  
         // extract databytes
@@ -321,37 +338,31 @@ void parseEvents( /* struct MidiFileTrackEvent *evts,*/ _Byte *evts_chunk, size_
         //  when evt is a Note On, and never elses
         if (evt.status_code == MIDI_NOTE_ON || evt.status_code == MIDI_NOTE_OFF)
         {
-            evt.note = eventDataBytesToNote(*(evts_chunk + _byte_counter));
-            printNote(evt.note);
+            evt.note = event_data_bytes_to_note(*(evts_chunk + _byte_counter));
+            print_midi_note(evt.note);
             printf("\n");
         }
         _byte_counter += _data_bytes_count;
-
-        /* DEBUG SHIT */ printf(TAB TAB "Event Size in Bytes: %li\n", (_byte_counter - _debug_event_byte_count));
-        /* DEBUG SHIT */ printf(TAB TAB "Finishing %linth loop, byte_counter=%li.\n\n\n", _event_counter, _byte_counter);
-
-        _event_counter ++;
+#if DEBUG
+        /* DEBUG IT */ printf(TAB TAB "Event Size in Bytes: %li\n", (_byte_counter - _debug_event_byte_count));
+        /* DEBUG IT */ printf(TAB TAB "Finishing %linth loop, byte_counter=%li.\n\n\n", _event_counter, _byte_counter);
+#endif
+        track->event_arr[_event_counter ++] = evt;
 
     }
 }
 
 // "Class" Methods
-struct MidiFileHeaderChunk readHeaderChunk( _Byte *fileContents )
+MiniMidi_FileHeader read_header_chunk( _Byte *file_contents )
 {
 
-    struct MidiFileHeaderChunk retval;
-    getSubstring( fileContents, retval.chunkType, 0, 4, true );
-
+    MiniMidi_FileHeader retval;
     
-    extractNumberFromByteArray( &(retval.length), fileContents, 4, 4 );
-    extractNumberFromByteArray( &(retval.format), fileContents, 8, 2 );
-    extractNumberFromByteArray( &(retval.ntrks), fileContents, 10, 2 );
-    extractNumberFromByteArray( &(retval.ntrks), fileContents, 10, 2 );
-    extractNumberFromByteArray( &(retval.division), fileContents, 12, 2 );
+    extract_number_from_byte_array( &(retval.length), file_contents, 4, 4 );
+    extract_number_from_byte_array( &(retval.format), file_contents, 8, 2 );
+    extract_number_from_byte_array( &(retval.ntrks), file_contents, 10, 2 );
+    extract_number_from_byte_array( &(retval.division), file_contents, 12, 2 );
 
-    // printf(TAB BOLDGREEN "- HEADER CHUNK:" RESET "\n");
-
-    printf(TAB TAB WHITE "Chunk Type:" RESET " %s \n", retval.chunkType);
     printf(TAB TAB WHITE "Chunk Length:" RESET " %i\n", retval.length );
     printf(TAB TAB WHITE "Format Code:" RESET " %i.\n", retval.format);
     printf(TAB TAB WHITE "Number Of Tracks:" RESET " %i.\n", retval.ntrks);
@@ -360,22 +371,37 @@ struct MidiFileHeaderChunk readHeaderChunk( _Byte *fileContents )
     return retval;
 }
 
-struct MidiFileTrackChunk readTrackChunk( _Byte *fileContent, size_t startIndex, size_t totalLen )
+MiniMidi_Track *read_track_chunk( _Byte *file_content, size_t start_index, size_t total_chunk_len )
 {
-    printf(GREEN "Reading Track Chunk" RESET ": Starting at %lu / %lu Bytes.\n", startIndex, totalLen);
-    struct MidiFileTrackChunk retval;
+    MiniMidi_Track *track = (MiniMidi_Track*)malloc( sizeof( struct MiniMidi_Track ) );
+    if (!track) return NULL; 
 
-    getSubstring( fileContent, retval.chunkType, startIndex, 4, true ); 
-    extractNumberFromByteArray( &(retval.length), fileContent, startIndex + 4, 4 );
-    getSubstring(fileContent, retval.trackBinData, startIndex + 8, retval.length, false );
+#if DEBUG
+    printf(GREEN "Reading Track Chunk" RESET ": Starting at %lu / %lu Bytes.\n", start_index, total_chunk_len);
+#endif
+    track->length = total_chunk_len;
+    // each event is minimum 3 bytes.
+    size_t max_events = track->length / 3;
+    track->event_arr = (MiniMidi_Event*)malloc( max_events * sizeof( MiniMidi_Event ) );
+
+    extract_number_from_byte_array( &(track->length), file_content, start_index + 4, 4 );
+
+    _Byte _track_bin_data[ track->length ];
+
+    get_substring(file_content, _track_bin_data, start_index + 8, track->length, false );
 
     //      total                                    + Chunk Id + Chunk len
-    assert( totalLen == ( startIndex + retval.length + 4        + 4 ));
-    printf("\n" GREEN "Track Chunk Len: " RESET "%i bytes.\n", retval.length);
+    assert( total_chunk_len == ( start_index + track->length + 4        + 4 ));
+    printf("\n" GREEN "Track Chunk Len: " RESET "%li bytes.\n", track->length);
 
-    parseEvents( retval.trackBinData, retval.length );
     
+    parse_track_events( track, _track_bin_data );
+    
+    return track;
+}
 
-
-    return retval;
+void freeMidiFileTrack( MiniMidi_Track *track )
+{
+    free( track->event_arr);
+    free( track );
 }

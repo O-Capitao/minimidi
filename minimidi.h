@@ -1,13 +1,16 @@
 #ifndef MINIMIDI_H
 #define MINIMIDI_H
 
-#include "stdlib.h"
-#include "stdint.h" // For uint8_t
-# include "globals.h"
+#include <stdlib.h>
+#include <stdint.h>
 
+#include "globals.h"
 
-
-// Enum definition for MIDI Status Codes
+/****************************************************************************************
+*
+*
+*   -> Enums and Aux Structs
+****************************************************************************************/
 typedef enum {
     MIDI_NOTE_OFF        = 0x80,  // 128
     MIDI_NOTE_ON         = 0x90,  // 144
@@ -35,54 +38,63 @@ typedef enum Note {
     B  = 11
 } Note;
 
-
-
 typedef struct {
     Note note;
     unsigned short octave;
 } MidiNote;
 
+// Utility  Functions
+// MidiStatusCode
+MidiStatusCode get_midi_status_code( _Byte *byte);
+void           print_midi_status_code(MidiStatusCode status);
+uint8_t        get_midi_data_byte_count(MidiStatusCode status);
+MidiNote       event_data_bytes_to_note( _Byte event_data_byte);
 
+void           print_midi_note(MidiNote note);
 
-typedef struct MidiFileHeaderChunk {
-    unsigned char chunkType[5];
-    __uint32_t length;
-    __uint16_t format;
-    __uint16_t ntrks;
-    __uint16_t division;
-} MidiFileHeaderChunk;
+// Byte stuff utilities
+void   reverse_byte_array(_Byte* arr, size_t len);
+void   extract_number_from_byte_array( void* tgt, _Byte* src, size_t start_ind, size_t len );
+void   get_substring( _Byte *src_str, _Byte* tgt_str, size_t start_index, size_t n_elements_to_copy, bool add_null_termination );
+size_t read_VLQ_delta_t( _Byte *bytes, size_t len, uint64_t *val_ptr);
 
-typedef struct MidiFileTrackEvent {
-    unsigned long delta_ticks;
+/****************************************************************************************
+*
+*
+*   -> Main Struct Defs
+****************************************************************************************/
+typedef struct MiniMidi_FileHeader
+{
+    size_t   length;
+    uint16_t format;
+    uint16_t ntrks;
+    uint16_t division;
+} MiniMidi_FileHeader;
+
+typedef struct MiniMidi_Event
+{
+    uint64_t       delta_ticks;
     MidiStatusCode status_code;
-    _Byte evt_data[2];
-    MidiNote note;
-} MidiFileTrackEvent;
+    _Byte          evt_data[2];
+    MidiNote       note;
+} MiniMidi_Event;
 
-typedef struct MidiFileTrackChunk {
-    unsigned char chunkType[5];
-    __uint32_t length;
-    _Byte* trackBinData;
-    size_t n_events;
-    struct MidiFileTrackEvent *event_arr;
-} MidiFileTrackChunk;
+typedef struct MiniMidi_Track
+{
+    size_t          length;
+    size_t          n_events;
+    MiniMidi_Event *event_arr;
+} MiniMidi_Track;
+
+typedef struct MiniMidi_MidiFile
+{
+    MiniMidi_FileHeader header;
+    MiniMidi_Track      track;
+} MiniMidi_MidiFile;
 
 
-MidiStatusCode getMidiStatusCode( _Byte *byte);
-void printMidiStatusCode(MidiStatusCode status);
-uint8_t getMidiDataByteCount(MidiStatusCode status);
-MidiNote eventDataBytesToNote( _Byte eventDataByte);
-void printNote(MidiNote note);
-
-// utility
-void reverseByteArray(_Byte* arr, int len);
-void extractNumberFromByteArray( void* tgt, _Byte* src, int start_ind, int len );
-void getSubstring(_Byte *src_str, unsigned char* tgt_str, int start_index, int n_elements_to_copy, bool add_null_termination );
-size_t readVLQ_DeltaT( _Byte *bytes, size_t len, unsigned long *val_ptr);
-void parseEvents( /* struct MidiFileTrackEvent *evts,*/ _Byte *evts_chunk, size_t chunk_len  );
-
-MidiFileHeaderChunk readHeaderChunk( _Byte *fileContents );
-MidiFileTrackChunk readTrackChunk( _Byte *fileContent, size_t startIndex, size_t totalLen );
-
+MiniMidi_FileHeader read_header_chunk( _Byte *file_contents );
+MiniMidi_Track     *read_track_chunk( _Byte *file_content, size_t start_index, size_t total_chunk_len );
+void                parse_track_events( MiniMidi_Track *track, _Byte *evts_chunk );
 
 #endif /* MINIMIDI_H */
