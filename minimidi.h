@@ -96,5 +96,8 @@ typedef struct MiniMidi_MidiFile
 MiniMidi_FileHeader read_header_chunk( _Byte *file_contents );
 MiniMidi_Track     *read_track_chunk( _Byte *file_content, size_t start_index, size_t total_chunk_len );
 void                parse_track_events( MiniMidi_Track *track, _Byte *evts_chunk );
+void                MiniMidi_FileHeader_print( MiniMidi_FileHeader *mh );
+void                MiniMidi_Event_print( MiniMidi_Event *me );
+void                MiniMidi_Track_print( MiniMidi_Track *mt );
 
 #endif /* MINIMIDI_H */

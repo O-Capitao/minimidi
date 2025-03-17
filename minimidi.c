@@ -4,7 +4,7 @@
 #include "assert.h"
 #include "stdio.h"
 
-#define DEBUG 1
+#define DEBUG 0
 
 /****************************************************************************************
 *
@@ -235,7 +235,7 @@ size_t read_VLQ_delta_t( _Byte *bytes, size_t len, uint64_t *val_ptr)
 
 
 #if DEBUG
-    /* DEBUG IT */ printf(TAB TAB "processing VLQ :: ");
+/* DEBUG IT */ printf(TAB TAB "processing VLQ :: ");
 #endif
 
     const _Byte _sign_bit_mask =    0x80; // 0b10000000
@@ -247,10 +247,12 @@ size_t read_VLQ_delta_t( _Byte *bytes, size_t len, uint64_t *val_ptr)
     {
         // grab a byte
         _curr_byte = bytes[_index++];
-        
-        /* DEBUG IT */ print_byte_as_binary(&_curr_byte, 0 );
-        /* DEBUG IT */ printf(" ");
-        
+
+#if DEBUG
+/* DEBUG IT */ print_byte_as_binary(&_curr_byte, 0 );
+/* DEBUG IT */ printf(" ");
+#endif
+
         retval<<=7;
         retval += ( _curr_byte & _7_last_bits_mask );
 
@@ -262,7 +264,10 @@ size_t read_VLQ_delta_t( _Byte *bytes, size_t len, uint64_t *val_ptr)
 
     *val_ptr = retval;
 
+#if DEBUG
     printf("processed %li bytes for VLQ.\n", _index);
+#endif
+
     return _index;
 }
 
@@ -275,7 +280,10 @@ void parse_track_events( MiniMidi_Track *track, _Byte *evts_chunk )
 {
     size_t _byte_counter = 0;
     size_t _event_counter = 0;
+
+#if DEBUG
     size_t _debug_event_byte_count = 0;
+#endif
 
     // Last status byte for running status handling.
     _Byte *_last_status_byte = NULL;
@@ -284,6 +292,7 @@ void parse_track_events( MiniMidi_Track *track, _Byte *evts_chunk )
 
     while ( _byte_counter < track->length )
     {
+
 #if DEBUG
         /* DEBUG IT */_debug_event_byte_count = _byte_counter;
         /* DEBUG IT */ printf(BOLDWHITE "Starting grab %lith byte. byte_counter=%li\n" RESET, (_byte_counter + 1), _byte_counter);
@@ -323,8 +332,8 @@ void parse_track_events( MiniMidi_Track *track, _Byte *evts_chunk )
             printf(RED "Invalid status byte detected — aborting!\n" RESET);
             return;
         }
-        /* DEBUG IT */ printf( TAB TAB GREEN "Status Code: " RESET );
 #if DEBUG
+        /* DEBUG IT */ printf( TAB TAB GREEN "Status Code: " RESET );
          /* DEBUG IT */ print_midi_status_code( evt.status_code );
 #endif
          _data_bytes_count = get_midi_data_byte_count( evt.status_code );
@@ -339,8 +348,10 @@ void parse_track_events( MiniMidi_Track *track, _Byte *evts_chunk )
         if (evt.status_code == MIDI_NOTE_ON || evt.status_code == MIDI_NOTE_OFF)
         {
             evt.note = event_data_bytes_to_note(*(evts_chunk + _byte_counter));
+#if DEBUG
             print_midi_note(evt.note);
             printf("\n");
+#endif
         }
         _byte_counter += _data_bytes_count;
 #if DEBUG
@@ -350,6 +361,7 @@ void parse_track_events( MiniMidi_Track *track, _Byte *evts_chunk )
         track->event_arr[_event_counter ++] = evt;
 
     }
+    track->n_events = _event_counter;
 }
 
 // "Class" Methods
@@ -363,11 +375,6 @@ MiniMidi_FileHeader read_header_chunk( _Byte *file_contents )
     extract_number_from_byte_array( &(retval.ntrks), file_contents, 10, 2 );
     extract_number_from_byte_array( &(retval.division), file_contents, 12, 2 );
 
-    printf(TAB TAB WHITE "Chunk Length:" RESET " %i\n", retval.length );
-    printf(TAB TAB WHITE "Format Code:" RESET " %i.\n", retval.format);
-    printf(TAB TAB WHITE "Number Of Tracks:" RESET " %i.\n", retval.ntrks);
-    printf(TAB TAB WHITE "Division:" RESET " %i.\n", retval.division);
-
     return retval;
 }
 
@@ -380,7 +387,8 @@ MiniMidi_Track *read_track_chunk( _Byte *file_content, size_t start_index, size_
     printf(GREEN "Reading Track Chunk" RESET ": Starting at %lu / %lu Bytes.\n", start_index, total_chunk_len);
 #endif
     track->length = total_chunk_len;
-    // each event is minimum 3 bytes.
+
+    // ESTIMATE: each event is minimum 3 bytes.
     size_t max_events = track->length / 3;
     track->event_arr = (MiniMidi_Event*)malloc( max_events * sizeof( MiniMidi_Event ) );
 
@@ -392,12 +400,45 @@ MiniMidi_Track *read_track_chunk( _Byte *file_content, size_t start_index, size_
 
     //      total                                    + Chunk Id + Chunk len
     assert( total_chunk_len == ( start_index + track->length + 4        + 4 ));
-    printf("\n" GREEN "Track Chunk Len: " RESET "%li bytes.\n", track->length);
-
-    
     parse_track_events( track, _track_bin_data );
     
     return track;
+}
+
+void MiniMidi_FileHeader_print( MiniMidi_FileHeader *mh )
+{
+    printf(BOLDWHITE "HEADER:\n---------------------------\n" RESET);
+    printf(TAB WHITE "Chunk Size:" RESET BOLDWHITE" %li" RESET " bytes\n", mh->length );
+    printf(TAB WHITE "Format Code:" RESET " %i.\n", mh->format);
+    printf(TAB WHITE "Number Of Tracks:" RESET " %i.\n", mh->ntrks);
+    printf(TAB WHITE "Division:" RESET " %i.\n", mh->division);
+    printf("---------------------------\n");
+}
+
+void MiniMidi_Event_print( MiniMidi_Event *me )
+{
+    printf(TAB TAB "Event:\n");
+    printf(TAB TAB "Delta: %lu ticks\n", me->delta_ticks );
+    printf(TAB TAB "Status Code: ");
+    print_midi_status_code(me->status_code);
+    printf("\n");
+    printf(TAB TAB "Note: ");
+    print_midi_note(me->note);
+    printf("\n");
+    printf(TAB TAB "----\n");
+}
+
+void MiniMidi_Track_print( MiniMidi_Track *mt )
+{
+    printf(BOLDWHITE "TRACK:" RESET "\n---------------------------\n");
+    printf(TAB WHITE "Chunk Size:" RESET BOLDWHITE" %li" RESET " bytes\n", mt->length );
+    printf(TAB WHITE "Number of Events: %li \n" RESET, mt->n_events );
+
+    for (int i = 0; i < mt->n_events; i++ ){
+        MiniMidi_Event_print( &(mt->event_arr[i]) );
+    }
+
+    printf("---------------------------\n");
 }
 
 void freeMidiFileTrack( MiniMidi_Track *track )

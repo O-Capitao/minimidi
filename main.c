@@ -55,7 +55,11 @@ int main( int argc, char *argv[] )
 
     // Parse The Midi File :)
     MiniMidi_FileHeader header = read_header_chunk(buffer);
+    MiniMidi_FileHeader_print(&header);
+
+
     MiniMidi_Track *track = read_track_chunk(buffer, 14, length );
+    MiniMidi_Track_print(track);
 
     free( buffer );
     free( track );
