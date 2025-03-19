@@ -63,13 +63,13 @@ size_t read_VLQ_delta_t( _Byte *bytes, size_t len, uint64_t *val_ptr);
 *
 *   -> Main Struct Defs
 ****************************************************************************************/
-typedef struct MiniMidi_FileHeader
+typedef struct MiniMidi_Header
 {
     size_t   length;
     uint16_t format;
     uint16_t ntrks;
     uint16_t division;
-} MiniMidi_FileHeader;
+} MiniMidi_Header;
 
 typedef struct MiniMidi_Event
 {
@@ -86,18 +86,29 @@ typedef struct MiniMidi_Track
     MiniMidi_Event *event_arr;
 } MiniMidi_Track;
 
-typedef struct MiniMidi_MidiFile
+typedef struct MiniMidi_File
 {
-    MiniMidi_FileHeader header;
-    MiniMidi_Track      track;
-} MiniMidi_MidiFile;
+    MiniMidi_Header     *header;
+    MiniMidi_Track      *track;
+    size_t               length;
+} MiniMidi_File;
 
-
-MiniMidi_FileHeader read_header_chunk( _Byte *file_contents );
-MiniMidi_Track     *read_track_chunk( _Byte *file_content, size_t start_index, size_t total_chunk_len );
 void                parse_track_events( MiniMidi_Track *track, _Byte *evts_chunk );
-void                MiniMidi_FileHeader_print( MiniMidi_FileHeader *mh );
-void                MiniMidi_Event_print( MiniMidi_Event *me );
+
+
+MiniMidi_Header     *MiniMidi_Header_read(_Byte *file_contents );
+void                MiniMidi_Header_print( MiniMidi_Header *mh );
+void                MiniMidi_Header_free( MiniMidi_Header *header );
+
+MiniMidi_Track      *MiniMidi_Track_read( _Byte *file_content, size_t start_index, size_t total_chunk_len );
 void                MiniMidi_Track_print( MiniMidi_Track *mt );
+void                MiniMidi_Track_free( MiniMidi_Track *track );
+void                MiniMidi_Event_print( MiniMidi_Event *me );
+
+MiniMidi_File       *MiniMidi_File_read_from_file( char *file_path, int path_len );
+MiniMidi_File       *MiniMidi_File_read( _Byte *file_contents, size_t file_len );
+void                MiniMidi_File_print( MiniMidi_File *file );
+void                MiniMidi_File_free( MiniMidi_File *file );
+
 
 #endif /* MINIMIDI_H */

@@ -8,3 +8,6 @@ NOW := $(shell date +"%c" | tr ' :' '__')
 
 compile: main.c
 	gcc -g -o $(OUTPUTFILE) -g $(SOURCES) -Wall -pedantic
+
+clean:
+	rm -f $(OUTPUTFILE) $(OBJS)
