@@ -3,6 +3,7 @@
 #include "string.h"
 #include "assert.h"
 #include "stdio.h"
+#include <unistd.h>
 
 #define DEBUG 0
 
@@ -371,7 +372,10 @@ MiniMidi_Header *MiniMidi_Header_read( _Byte *file_contents )
     MiniMidi_Header *retval = (MiniMidi_Header*)malloc( sizeof( struct MiniMidi_Header ) );
     if (!retval) return NULL; 
     
-    extract_number_from_byte_array( &(retval->length), file_contents, 4, 4 );
+    uint32_t aux_for_chunk_size;
+    extract_number_from_byte_array( &aux_for_chunk_size, file_contents, 4, 4 );
+    retval->length = (size_t)aux_for_chunk_size;
+
     extract_number_from_byte_array( &(retval->format), file_contents, 8, 2 );
     extract_number_from_byte_array( &(retval->ntrks), file_contents, 10, 2 );
     extract_number_from_byte_array( &(retval->division), file_contents, 12, 2 );
@@ -409,7 +413,7 @@ MiniMidi_Track *MiniMidi_Track_read( _Byte *file_content, size_t start_index, si
 void MiniMidi_Header_print( MiniMidi_Header *mh )
 {
     printf(BOLDWHITE "HEADER:\n---------------------------\n" RESET);
-    printf(TAB WHITE "Chunk Size:" RESET BOLDWHITE " %lu" RESET " bytes\n", mh->length );
+    printf(TAB WHITE "Chunk Size:" RESET BOLDWHITE " %zu" RESET " bytes\n", mh->length );
     printf(TAB WHITE "Format Code:" RESET " %i.\n", mh->format);
     printf(TAB WHITE "Number Of Tracks:" RESET " %i.\n", mh->ntrks);
     printf(TAB WHITE "Division:" RESET " %i.\n", mh->division);
@@ -440,6 +444,7 @@ void MiniMidi_Track_print( MiniMidi_Track *mt )
     }
 
     printf("---------------------------\n");
+    
 }
 
 void MiniMidi_Header_free( MiniMidi_Header *header )
@@ -470,15 +475,16 @@ MiniMidi_File *MiniMidi_File_read( _Byte *file_contents, size_t file_len )
 {
     MiniMidi_File *retval = (MiniMidi_File*)malloc( sizeof( struct MiniMidi_File ) );
     if (!retval) return NULL; 
+
+    
     retval->length = file_len;
     retval->header = MiniMidi_Header_read( file_contents );
-
     retval->track = MiniMidi_Track_read( file_contents, 14, file_len );
 
     return retval;
 }
 
-MiniMidi_File * MiniMidi_File_read_from_file( char *file_path, int path_len )
+MiniMidi_File * MiniMidi_File_read_from_file( char *file_path ) //, int path_len )
 {
     FILE *fileptr;
     fileptr = fopen( file_path, "rb" );
@@ -505,7 +511,11 @@ MiniMidi_File * MiniMidi_File_read_from_file( char *file_path, int path_len )
 
     // MiniMidi_File *retval = MiniMidi_File_read( buffer, length );
     MiniMidi_File *retval = MiniMidi_File_read( buffer, length );
+
+    strncpy(retval->filepath, file_path, 100);
+    // printf("sjsjs %s\n\n", retval->filepath );
     free( buffer );
 
     return retval;
 }
+ 
