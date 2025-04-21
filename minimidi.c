@@ -1,11 +1,14 @@
-#include "stdbool.h"
-#include "minimidi.h"
-#include "string.h"
-#include "assert.h"
-#include "stdio.h"
+#include <stdbool.h>
+#include <string.h>
+#include <assert.h>
+#include <stdio.h>
 #include <unistd.h>
 
+#include "minimidi.h"
+
 #define DEBUG 0
+
+
 
 /****************************************************************************************
 *
@@ -31,6 +34,9 @@ void print_byte_as_binary(_Byte *byte, int little_endian)
         }
     }
 }
+
+
+
 
 
 // Function to get MIDI Status Code from a byte
@@ -65,6 +71,9 @@ MidiStatusCode get_midi_status_code( _Byte *byte)
             return MIDI_INVALID;
     }
 }
+
+
+
 
 void print_midi_status_code(MidiStatusCode status)
 {
@@ -104,6 +113,9 @@ void print_midi_status_code(MidiStatusCode status)
     }
 }
 
+
+
+
 uint8_t get_midi_data_byte_count(MidiStatusCode status)
 {
 
@@ -130,6 +142,9 @@ uint8_t get_midi_data_byte_count(MidiStatusCode status)
     }
 }
 
+
+
+
 MidiNote event_data_bytes_to_note( _Byte event_data_byte )
 {
 
@@ -150,6 +165,9 @@ MidiNote event_data_bytes_to_note( _Byte event_data_byte )
     
     return result;
 }
+
+
+
 
 void print_midi_note(MidiNote note)
 {
@@ -199,6 +217,9 @@ void print_midi_note(MidiNote note)
     printf(" Oct: %hu ", note.octave );
 }
 
+
+
+
 void reverse_byte_array(_Byte* arr, size_t len)
 {
     _Byte aux;
@@ -210,6 +231,9 @@ void reverse_byte_array(_Byte* arr, size_t len)
     }
 }
 
+
+
+
 void extract_number_from_byte_array( void* tgt, _Byte* src, size_t start_ind, size_t len )
 {
     _Byte extracted_bytes[len];
@@ -218,6 +242,9 @@ void extract_number_from_byte_array( void* tgt, _Byte* src, size_t start_ind, si
     reverse_byte_array( extracted_bytes, len );
     memcpy(tgt, extracted_bytes, len);
 }
+
+
+
 
 void get_substring(_Byte *src_str, _Byte* tgt_str, size_t start_index, size_t n_elements_to_copy, bool add_null_termination )
 {
@@ -228,6 +255,9 @@ void get_substring(_Byte *src_str, _Byte* tgt_str, size_t start_index, size_t n_
         tgt_str[ n_elements_to_copy ] = '\0';
     }
 }
+
+
+
 
 size_t read_VLQ_delta_t( _Byte *bytes, size_t len, uint64_t *val_ptr)
 {
@@ -271,6 +301,9 @@ size_t read_VLQ_delta_t( _Byte *bytes, size_t len, uint64_t *val_ptr)
 
     return _index;
 }
+
+
+
 
 /****************************************************************************************
 *
@@ -365,6 +398,65 @@ void parse_track_events( MiniMidi_Track *track, _Byte *evts_chunk )
     track->n_events = _event_counter;
 }
 
+
+
+
+MiniMidi_File* create_mini_midi_file(const char *filepath) {
+    MiniMidi_File *midi_file = malloc(sizeof(MiniMidi_File));
+    if (!midi_file) return NULL;
+
+    midi_file->filepath = strdup(filepath);
+    if (!midi_file->filepath) {
+        free(midi_file);
+        return NULL;
+    }
+
+    // Allocate and zero-initialize the header
+    midi_file->header = calloc(1, sizeof(MiniMidi_Header));
+    if (!midi_file->header) {
+        free(midi_file->filepath);
+        free(midi_file);
+        return NULL;
+    }
+
+    // Set format = 0 and ntrks = 1 by convention for single-track
+    midi_file->header->format = 0;
+    midi_file->header->ntrks = 1;
+
+    // Allocate one track
+    midi_file->track = calloc(1, sizeof(MiniMidi_Track));
+    if (!midi_file->track) {
+        free(midi_file->header);
+        free(midi_file->filepath);
+        free(midi_file);
+        return NULL;
+    }
+
+    midi_file->length = 0; // can set this when writing or parsing
+
+    return midi_file;
+}
+
+void destroy_mini_midi_file(MiniMidi_File *midi_file) {
+    if (!midi_file) return;
+
+    if (midi_file->filepath) free(midi_file->filepath);
+    if (midi_file->header) free(midi_file->header);
+
+    if (midi_file->track) {
+        // Free event array if it exists
+        if (midi_file->track->event_arr) {
+            free(midi_file->track->event_arr);
+        }
+        free(midi_file->track);
+    }
+
+    free(midi_file);
+
+    printf("yo\n");
+}
+
+
 // "Class" Methods
 MiniMidi_Header *MiniMidi_Header_read( _Byte *file_contents )
 {
@@ -383,9 +475,14 @@ MiniMidi_Header *MiniMidi_Header_read( _Byte *file_contents )
     return retval;
 }
 
+
+
+
 MiniMidi_Track *MiniMidi_Track_read( _Byte *file_content, size_t start_index, size_t total_chunk_len )
 {
     MiniMidi_Track *track = (MiniMidi_Track*)malloc( sizeof( struct MiniMidi_Track ) );
+    _Byte _track_bin_data[ total_chunk_len ];
+
     if (!track) return NULL; 
 
 #if DEBUG
@@ -398,17 +495,17 @@ MiniMidi_Track *MiniMidi_Track_read( _Byte *file_content, size_t start_index, si
     track->event_arr = (MiniMidi_Event*)malloc( max_events * sizeof( MiniMidi_Event ) );
 
     extract_number_from_byte_array( &(track->length), file_content, start_index + 4, 4 );
-
-    _Byte _track_bin_data[ track->length ];
-
     get_substring(file_content, _track_bin_data, start_index + 8, track->length, false );
 
     //      total                                    + Chunk Id + Chunk len
     assert( total_chunk_len == ( start_index + track->length + 4        + 4 ));
     parse_track_events( track, _track_bin_data );
-    
+
     return track;
 }
+
+
+
 
 void MiniMidi_Header_print( MiniMidi_Header *mh )
 {
@@ -419,6 +516,9 @@ void MiniMidi_Header_print( MiniMidi_Header *mh )
     printf(TAB WHITE "Division:" RESET " %i.\n", mh->division);
     printf("---------------------------\n");
 }
+
+
+
 
 void MiniMidi_Event_print( MiniMidi_Event *me )
 {
@@ -432,6 +532,9 @@ void MiniMidi_Event_print( MiniMidi_Event *me )
     printf("\n");
     printf(TAB TAB "----\n");
 }
+
+
+
 
 void MiniMidi_Track_print( MiniMidi_Track *mt )
 {
@@ -447,10 +550,16 @@ void MiniMidi_Track_print( MiniMidi_Track *mt )
     
 }
 
+
+
+
 void MiniMidi_Header_free( MiniMidi_Header *header )
 {
     free( header );
 }
+
+
+
 
 void MiniMidi_Track_free( MiniMidi_Track *track )
 {
@@ -458,12 +567,19 @@ void MiniMidi_Track_free( MiniMidi_Track *track )
     free( track );
 }
 
+
+
+
 void MiniMidi_File_free( MiniMidi_File *file )
 {
-    MiniMidi_Header_free( file->header );
-    MiniMidi_Track_free( file->track );
-    free( file );
+    // MiniMidi_Header_free( file->header );
+    // MiniMidi_Track_free( file->track );
+    // free( file );
+    destroy_mini_midi_file(file);
 }
+
+
+
 
 void MiniMidi_File_print( MiniMidi_File *file )
 {
@@ -471,21 +587,16 @@ void MiniMidi_File_print( MiniMidi_File *file )
     MiniMidi_Track_print( file->track );
 }
 
-MiniMidi_File *MiniMidi_File_read( _Byte *file_contents, size_t file_len )
-{
-    MiniMidi_File *retval = (MiniMidi_File*)malloc( sizeof( struct MiniMidi_File ) );
-    if (!retval) return NULL; 
 
-    
-    retval->length = file_len;
-    retval->header = MiniMidi_Header_read( file_contents );
-    retval->track = MiniMidi_Track_read( file_contents, 14, file_len );
 
-    return retval;
-}
 
 MiniMidi_File * MiniMidi_File_read_from_file( char *file_path ) //, int path_len )
 {
+    MiniMidi_File *retval = create_mini_midi_file( file_path );
+    //(MiniMidi_File*)malloc( sizeof( struct MiniMidi_File ) );
+    
+    if (!retval) return NULL; 
+
     FILE *fileptr;
     fileptr = fopen( file_path, "rb" );
     _Byte * buffer = 0;
@@ -509,11 +620,11 @@ MiniMidi_File * MiniMidi_File_read_from_file( char *file_path ) //, int path_len
         fclose (fileptr);
     }
 
-    // MiniMidi_File *retval = MiniMidi_File_read( buffer, length );
-    MiniMidi_File *retval = MiniMidi_File_read( buffer, length );
+    retval->length = length;
+    retval->header = MiniMidi_Header_read( buffer );
+    retval->track = MiniMidi_Track_read( buffer, 14, length );
 
-    strncpy(retval->filepath, file_path, 100);
-    // printf("sjsjs %s\n\n", retval->filepath );
+    // strncpy( retval->filepath, file_path, 100 );
     free( buffer );
 
     return retval;

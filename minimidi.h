@@ -107,10 +107,9 @@ void                MiniMidi_Track_free( MiniMidi_Track *track );
 void                MiniMidi_Event_print( MiniMidi_Event *me );
 
 MiniMidi_File       *MiniMidi_File_read_from_file( char *file_path ); //, int path_len );
-MiniMidi_File       *MiniMidi_File_read( _Byte *file_contents, size_t file_len );
+// MiniMidi_File       *MiniMidi_File_read( _Byte *file_contents, size_t file_len );
 void                MiniMidi_File_print( MiniMidi_File *file );
 void                MiniMidi_File_free( MiniMidi_File *file );
-
 
 /****************************************************************************************
 *
