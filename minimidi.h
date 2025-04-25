@@ -68,12 +68,12 @@ typedef struct MiniMidi_Header
     size_t   length;
     uint16_t format;
     uint16_t ntrks;
-    uint16_t division;
+    uint16_t ppqn;
 } MiniMidi_Header;
 
 typedef struct MiniMidi_Event
 {
-    uint64_t       delta_ticks;
+    uint64_t       delta_ticks, abs_ticks;
     MidiStatusCode status_code;
     _Byte          evt_data[2];
     MidiNote       note;
@@ -84,6 +84,8 @@ typedef struct MiniMidi_Track
     size_t          length;
     size_t          n_events;
     MiniMidi_Event *event_arr;
+    size_t total_ticks,
+        total_beats;
 } MiniMidi_Track;
 
 typedef struct MiniMidi_File

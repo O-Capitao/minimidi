@@ -312,6 +312,8 @@ size_t read_VLQ_delta_t( _Byte *bytes, size_t len, uint64_t *val_ptr)
 ****************************************************************************************/
 void parse_track_events( MiniMidi_Track *track, _Byte *evts_chunk )
 {
+    track->total_ticks = 0;
+    
     size_t _byte_counter = 0;
     size_t _event_counter = 0;
 
@@ -335,6 +337,9 @@ void parse_track_events( MiniMidi_Track *track, _Byte *evts_chunk )
 
         struct MiniMidi_Event evt;
         _byte_counter += read_VLQ_delta_t( evts_chunk + _byte_counter, track->length - _byte_counter, &(evt.delta_ticks));
+        track->total_ticks += evt.delta_ticks;
+        evt.abs_ticks = track->total_ticks;
+
 
 
 #if DEBUG
@@ -396,6 +401,7 @@ void parse_track_events( MiniMidi_Track *track, _Byte *evts_chunk )
 
     }
     track->n_events = _event_counter;
+    // track->total_beats = track->total_ticks / ppqn;
 }
 
 
@@ -437,7 +443,8 @@ MiniMidi_File* create_mini_midi_file(const char *filepath) {
     return midi_file;
 }
 
-void destroy_mini_midi_file(MiniMidi_File *midi_file) {
+void destroy_mini_midi_file(MiniMidi_File *midi_file)
+{
     if (!midi_file) return;
 
     if (midi_file->filepath) free(midi_file->filepath);
@@ -452,8 +459,6 @@ void destroy_mini_midi_file(MiniMidi_File *midi_file) {
     }
 
     free(midi_file);
-
-    printf("yo\n");
 }
 
 
@@ -470,7 +475,7 @@ MiniMidi_Header *MiniMidi_Header_read( _Byte *file_contents )
 
     extract_number_from_byte_array( &(retval->format), file_contents, 8, 2 );
     extract_number_from_byte_array( &(retval->ntrks), file_contents, 10, 2 );
-    extract_number_from_byte_array( &(retval->division), file_contents, 12, 2 );
+    extract_number_from_byte_array( &(retval->ppqn), file_contents, 12, 2 );
 
     return retval;
 }
@@ -513,7 +518,7 @@ void MiniMidi_Header_print( MiniMidi_Header *mh )
     printf(TAB WHITE "Chunk Size:" RESET BOLDWHITE " %zu" RESET " bytes\n", mh->length );
     printf(TAB WHITE "Format Code:" RESET " %i.\n", mh->format);
     printf(TAB WHITE "Number Of Tracks:" RESET " %i.\n", mh->ntrks);
-    printf(TAB WHITE "Division:" RESET " %i.\n", mh->division);
+    printf(TAB WHITE "Division:" RESET " %i PPQN.\n", mh->ppqn);
     printf("---------------------------\n");
 }
 
@@ -587,13 +592,9 @@ void MiniMidi_File_print( MiniMidi_File *file )
     MiniMidi_Track_print( file->track );
 }
 
-
-
-
-MiniMidi_File * MiniMidi_File_read_from_file( char *file_path ) //, int path_len )
+MiniMidi_File * MiniMidi_File_read_from_file( char *file_path )
 {
     MiniMidi_File *retval = create_mini_midi_file( file_path );
-    //(MiniMidi_File*)malloc( sizeof( struct MiniMidi_File ) );
     
     if (!retval) return NULL; 
 
@@ -623,8 +624,8 @@ MiniMidi_File * MiniMidi_File_read_from_file( char *file_path ) //, int path_len
     retval->length = length;
     retval->header = MiniMidi_Header_read( buffer );
     retval->track = MiniMidi_Track_read( buffer, 14, length );
+    retval->track->total_beats = (retval->track->total_ticks / retval->header->ppqn) + 1;
 
-    // strncpy( retval->filepath, file_path, 100 );
     free( buffer );
 
     return retval;
