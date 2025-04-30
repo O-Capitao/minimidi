@@ -22,7 +22,10 @@ static const int OCT_RANGE = 8;
 static const int MAX_NOTE_VAL = OCT_RANGE * 12;
 
 static const int LINES_PER_SEMITONE = 2;
-static const int COLS_PER_BEAT = 2;
+static const int COLS_PER_BEAT = 4;
+
+// time sig
+static const int BEAT_PER_BAR = 4;
 
 // Grid Subcomponent
 static const int GRID_LEFT_LABELS_WIDTH = 8;
@@ -86,21 +89,21 @@ void UiState_update_sizes( UiState *self, int sz_cols, int sz_lines )
 /***
  * RENDER!
  */
-int render_grid( WINDOW *tgt, UiState *state)
+int render_grid( WINDOW *tgt, UiState *st)
 {
-    int line_index, col_index;
+    int line_index, col_index, beat_counter;
     
     chtype note_delim = '_';
     chtype bar_delim = ':';
 
     int err;
 
-    for (int i_note = state->logical_start[1]; i_note < state->logical_start[1] + state->semitones_in_grid; i_note ++ )
+    for (int i_note = st->logical_start[1]; i_note < st->logical_start[1] + st->semitones_in_grid; i_note ++ )
     {
-        line_index = GRID_PADDING_TOP + ((state->grid_size[1] - GRID_BOTT_LABELS_HEIGHT)- LINES_PER_SEMITONE * ( i_note - state->logical_start[1] ));
-        assert(line_index > 0 && line_index < state->grid_size[1]);
+        line_index = GRID_PADDING_TOP + ((st->grid_size[1] - GRID_BOTT_LABELS_HEIGHT)- LINES_PER_SEMITONE * ( i_note - st->logical_start[1] ));
+        assert(line_index > 0 && line_index < st->grid_size[1]);
         // draw horizontal line
-        for (int j1 = GRID_LEFT_LABELS_WIDTH; j1 < state->grid_size[0] - 1; j1 += 2 )
+        for (int j1 = GRID_LEFT_LABELS_WIDTH; j1 < st->grid_size[0] - 1; j1 += 2 )
         {
             if ( (err = mvwaddch( tgt, line_index, j1, note_delim )) )
             {
@@ -111,16 +114,27 @@ int render_grid( WINDOW *tgt, UiState *state)
         // offset for "x" markers -> time
         line_index--;
         
-        // // make columns        
-        // for (int j_beat = state->logical_start[0]; j_beat < COLS_PER_BEAT * ( state->logical_start[0] + state->beats_in_grid ); j_beat+= 4 )
-        // {
-        //     col_index = j_beat * COLS_PER_BEAT + GRID_LEFT_LABELS_WIDTH;
+        // make columns        
+        for (int j_beat = st->logical_start[0]; j_beat < st->logical_start[0] + st->beats_in_grid; j_beat++ )
+        {
+            col_index = ( j_beat - st->logical_start[0] ) * COLS_PER_BEAT + GRID_LEFT_LABELS_WIDTH;
             
-        //     if ( (err = mvwaddch( tgt, line_index, col_index, bar_delim )) )
-        //     {
-        //         return 1;
-        //     }
-        // }
+            if ( !(j_beat % BEAT_PER_BAR ))
+            {
+                beat_counter = j_beat / BEAT_PER_BAR;
+
+                if ((err = mvwaddch( tgt, line_index, col_index, bar_delim )))
+                {
+                    return err;
+                }
+
+                // render beat counter lbls
+                if ((err = mvwprintw( tgt, st->grid_size[1], col_index, "%d", beat_counter )))
+                {
+                    return err;
+                }
+            }
+        }
     }
     return 0;
 }
@@ -219,10 +233,13 @@ int handle_keys( UiState *ui_state)
             // Handle down arrow key
             break;
         case KEY_LEFT:
-            
+            if (ui_state->logical_start[0] > 0)
+            {
+                ui_state->logical_start[0]--;
+            }
             break;
         case KEY_RIGHT:
-            // Handle right arrow key
+            ui_state->logical_start[0]++;
             break;
         case 'q':
         case 'Q':
