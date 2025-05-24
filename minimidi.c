@@ -1,4 +1,3 @@
-#include <stdbool.h>
 #include <string.h>
 #include <assert.h>
 #include <stdio.h>
@@ -218,7 +217,15 @@ void print_midi_note(MidiNote note)
 }
 
 
+bool compare_MidiNote(MidiNote *a, MidiNote *b)
+{
+    return (a->note == b->note) && (a->octave == b->octave);
+}
 
+int midi_note_to_int( MidiNote *n )
+{
+    return (int)(n->note) + (n->octave) * 12;
+}
 
 void reverse_byte_array(_Byte* arr, size_t len)
 {
@@ -336,6 +343,10 @@ void parse_track_events( MiniMidi_Track *track, _Byte *evts_chunk )
 
 
         struct MiniMidi_Event evt;
+
+        evt.next = NULL;
+        evt.prev = NULL;
+
         _byte_counter += read_VLQ_delta_t( evts_chunk + _byte_counter, track->length - _byte_counter, &(evt.delta_ticks));
         track->total_ticks += evt.delta_ticks;
         evt.abs_ticks = track->total_ticks;
@@ -461,6 +472,33 @@ void destroy_mini_midi_file(MiniMidi_File *midi_file)
     free(midi_file);
 }
 
+int hook_up_events( MiniMidi_Event *arr, size_t n )
+{
+    int hook_counter = 0;
+    MiniMidi_Event *cursor, *cursor2;
+
+    for (int i = 0; i < n; i++)
+    {
+        cursor = &(arr[i]);
+        
+        if (cursor->status_code == MIDI_NOTE_ON)
+        {
+            // odds are that a NOTE OFF exists for this note
+            for (int j = i; j < n; j++)
+            {
+                cursor2 = &(arr[j]);
+                if ( cursor2->status_code == MIDI_NOTE_OFF && compare_MidiNote( &(cursor->note), &(cursor2->note) ))
+                {
+                    hook_counter++;
+                    cursor->next = cursor2;
+                    cursor2->prev = cursor;
+                }
+            }
+        }
+    }
+
+    return hook_counter;
+}
 
 // "Class" Methods
 MiniMidi_Header *MiniMidi_Header_read( _Byte *file_contents )
@@ -493,6 +531,7 @@ MiniMidi_Track *MiniMidi_Track_read( _Byte *file_content, size_t start_index, si
 #if DEBUG
     printf(GREEN "Reading Track Chunk" RESET ": Starting at %lu / %lu Bytes.\n", start_index, total_chunk_len);
 #endif
+
     track->length = total_chunk_len;
 
     // ESTIMATE: each event is minimum 3 bytes.
@@ -505,6 +544,7 @@ MiniMidi_Track *MiniMidi_Track_read( _Byte *file_content, size_t start_index, si
     //      total                                    + Chunk Id + Chunk len
     assert( total_chunk_len == ( start_index + track->length + 4        + 4 ));
     parse_track_events( track, _track_bin_data );
+    hook_up_events( track->event_arr, track->n_events );
 
     return track;
 }
@@ -563,17 +603,11 @@ void MiniMidi_Header_free( MiniMidi_Header *header )
     free( header );
 }
 
-
-
-
 void MiniMidi_Track_free( MiniMidi_Track *track )
 {
     free( track->event_arr);
     free( track );
 }
-
-
-
 
 void MiniMidi_File_free( MiniMidi_File *file )
 {
@@ -582,9 +616,6 @@ void MiniMidi_File_free( MiniMidi_File *file )
     // free( file );
     destroy_mini_midi_file(file);
 }
-
-
-
 
 void MiniMidi_File_print( MiniMidi_File *file )
 {
@@ -602,6 +633,7 @@ MiniMidi_File * MiniMidi_File_read_from_file( char *file_path )
     fileptr = fopen( file_path, "rb" );
     _Byte * buffer = 0;
     size_t length;
+    // retval->buffer_index = 0;
 
     if (fileptr)
     {
@@ -625,9 +657,140 @@ MiniMidi_File * MiniMidi_File_read_from_file( char *file_path )
     retval->header = MiniMidi_Header_read( buffer );
     retval->track = MiniMidi_Track_read( buffer, 14, length );
     retval->track->total_beats = (retval->track->total_ticks / retval->header->ppqn) + 1;
+    // retval->tree = MiniMidi_SegmentTree_init( retval->track->event_arr, retval->track->n_events );
+    
 
     free( buffer );
 
     return retval;
 }
- 
+
+
+MiniMidi_Event_List *MiniMidi_Event_LList_init()
+{
+    MiniMidi_Event_List *self = (MiniMidi_Event_List *)malloc(sizeof( MiniMidi_Event_List ));
+    self->length = 0;
+    self->first = NULL;
+    self->last = NULL;
+
+    return self;
+}
+
+int MiniMidi_Event_List_append(MiniMidi_Event_List*self, MiniMidi_Event *v)
+{
+    MiniMidi_Event_List_Node *node = (MiniMidi_Event_List_Node *)malloc(sizeof( MiniMidi_Event_List_Node ));
+    MiniMidi_Event_List_Node *aux = 0;
+
+    node->next = NULL;
+    node->value = v;
+
+
+    // list is empty
+    if (!self->first)
+    {
+
+        self->last = node;
+        self->first = node;
+        node->next = NULL;
+
+    } else
+    {
+        aux = self->last;
+        self->last = node;
+        aux->next = node;
+
+    }
+
+    self->length++;
+
+    return 0;
+}
+
+void _print_list( MiniMidi_Event_List*self )
+{
+    MiniMidi_Event_List_Node *n = self->first;
+    int i = 0;
+    printf("Printing list with %li items.\n", self->length);
+
+    if (!self->length) return;
+
+    while ( n )
+    {
+        printf("\n\nNode %d: at %li ticks\n", i++, n->next->value->abs_ticks);
+        print_midi_note( n->value->note );
+        n = n->next;
+    }
+}
+
+void _recurse_and_destroy( MiniMidi_Event_List_Node *node)
+{
+    if (node->next)
+    {
+        _recurse_and_destroy(node->next);
+    }
+    free(node);
+}
+
+// find index of 1st evt for which ticks is greater than
+int _find_index_for_ticks_gt_eq(int ticks, MiniMidi_Event *arr, size_t arr_size)
+{
+    for (int i = 0; i < arr_size; i++)
+    {
+        if (arr[i].abs_ticks >= ticks)
+        {
+            return i;
+        }
+    }
+    return -1;
+}
+
+// find index of last evt for which ticks is lesser than
+int _find_index_for_ticks_lt_eq(int ticks, MiniMidi_Event *arr, size_t arr_size)
+{
+    for (int i = arr_size -1; i >= 0 ; i--)
+    {
+        if (arr[i].abs_ticks <= ticks)
+        {
+            return (arr_size - 1 - i);
+        }
+    }
+    return -1;
+}
+
+
+int _emptyList( MiniMidi_Event_List*self )
+{
+    if (self->first)
+        _recurse_and_destroy(self->first);
+    
+    return 0;
+}
+
+/**
+ * Public again
+ */
+int MiniMidi_Event_List_destroy(MiniMidi_Event_List*self)
+{
+    _emptyList( self );
+    free(self);
+    return 0;
+}
+
+int MiniMidi_get_events_in_tick_range( MiniMidi_File *self, MiniMidi_Event_List *cntnr, int start_ticks, int end_ticks )
+{
+    _emptyList(cntnr);
+
+    int start_index = _find_index_for_ticks_gt_eq(start_ticks, self->track->event_arr, self->track->n_events);
+    int end_index = _find_index_for_ticks_lt_eq(start_ticks, self->track->event_arr, self->track->n_events);
+
+    assert(start_index > -1 && end_index > -1);
+
+    for (int i = start_index; i < end_index; i++)
+    {
+        MiniMidi_Event_List_append(cntnr, &( self->track->event_arr[i] ));
+    }
+
+    // _print_list(cntnr);
+
+    return 0;
+}

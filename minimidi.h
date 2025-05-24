@@ -3,8 +3,13 @@
 
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 #include "globals.h"
+
+// size of a buffer used to bring events to a caller fn,
+// e.g. by searching
+#define MIDI_EVENTS_BUFFER_SIZE 128
 
 /****************************************************************************************
 *
@@ -48,7 +53,12 @@ typedef struct {
 MidiStatusCode get_midi_status_code( _Byte *byte);
 void           print_midi_status_code(MidiStatusCode status);
 uint8_t        get_midi_data_byte_count(MidiStatusCode status);
+
 MidiNote       event_data_bytes_to_note( _Byte event_data_byte);
+int            midi_note_to_int( MidiNote *note );
+
+
+bool compare_MidiNote( MidiNote *n1, MidiNote *n2 );
 
 void           print_midi_note(MidiNote note);
 
@@ -69,14 +79,22 @@ typedef struct MiniMidi_Header
     uint16_t format;
     uint16_t ntrks;
     uint16_t ppqn;
+
 } MiniMidi_Header;
 
 typedef struct MiniMidi_Event
 {
-    uint64_t       delta_ticks, abs_ticks;
+    uint64_t       delta_ticks, 
+                   abs_ticks;
+
     MidiStatusCode status_code;
     _Byte          evt_data[2];
     MidiNote       note;
+
+    // if a sequence is implied, such as NOTE ON / OFF pair,
+    // use this to hook up related events
+    struct MiniMidi_Event *next, *prev;
+
 } MiniMidi_Event;
 
 typedef struct MiniMidi_Track
@@ -84,16 +102,22 @@ typedef struct MiniMidi_Track
     size_t          length;
     size_t          n_events;
     MiniMidi_Event *event_arr;
-    size_t total_ticks,
-        total_beats;
+    size_t          total_ticks,
+                    total_beats;
 } MiniMidi_Track;
 
+
+
+/**
+ * MAIN STRUCTURE
+ */
 typedef struct MiniMidi_File
 {
     char *filepath;
-    MiniMidi_Header     *header;
-    MiniMidi_Track      *track;
+    MiniMidi_Header      *header;
+    MiniMidi_Track       *track;
     size_t               length;
+
 } MiniMidi_File;
 
 void                parse_track_events( MiniMidi_Track *track, _Byte *evts_chunk );
@@ -108,16 +132,40 @@ void                MiniMidi_Track_print( MiniMidi_Track *mt );
 void                MiniMidi_Track_free( MiniMidi_Track *track );
 void                MiniMidi_Event_print( MiniMidi_Event *me );
 
-MiniMidi_File       *MiniMidi_File_read_from_file( char *file_path ); //, int path_len );
-// MiniMidi_File       *MiniMidi_File_read( _Byte *file_contents, size_t file_len );
+MiniMidi_File       *MiniMidi_File_read_from_file( char *file_path );
 void                MiniMidi_File_print( MiniMidi_File *file );
 void                MiniMidi_File_free( MiniMidi_File *file );
 
-/****************************************************************************************
-*
-*
-*   -> Renderer - NCurses
-****************************************************************************************/
-void ui_loop();
+
+
+
+// AUX STRUCTURES
+// use this to pass items into outside
+typedef struct MiniMidi_Event_List_Node
+{
+    MiniMidi_Event *value;
+    
+    struct MiniMidi_Event_List_Node *next;
+
+} MiniMidi_Event_List_Node;
+
+typedef struct MiniMidi_Event_List
+{   
+    size_t length;
+    
+    MiniMidi_Event_List_Node *first,
+        *last;
+   
+} MiniMidi_Event_List;
+
+// MiniMidi_Event_List_Node *MiniMidi_Event_LList_Node_init(MiniMidi_Event *v);
+MiniMidi_Event_List      *MiniMidi_Event_LList_init();
+
+int MiniMidi_Event_List_destroy(MiniMidi_Event_List*self);
+int MiniMidi_Event_List_append(MiniMidi_Event_List*self, MiniMidi_Event *v);
+// query events
+int MiniMidi_get_events_in_tick_range( MiniMidi_File *self, MiniMidi_Event_List *container, int start_ticks, int end_ticks );
+int MiniMidi_Event_List_filter_octave_range( MiniMidi_Event_List *self, int start_oct, int end_oct );
+
 
 #endif /* MINIMIDI_H */
