@@ -13,7 +13,7 @@ static const int MAX_NOTE_VAL = OCT_RANGE * 12;
 static const int LINES_PER_SEMITONE = 2;
 
 // Grid Subcomponent
-static const int GRID_LEFT_LABELS_WIDTH = 8;
+static const int GRID_LEFT_LABELS_WIDTH = 7;
 static const int GRID_BOTT_LABELS_HEIGHT = 3;
 static const int GRID_PADDING_TOP = 2;
 
@@ -97,6 +97,12 @@ int _handle_input( MiniMidi_TUI *self )
         case 'E':
             self->is_dirty = !self->is_dirty;
             break;
+        case '+':
+            self->cols_in_beat++;
+            break;
+        case '-':
+            if (self->cols_in_beat>1) self->cols_in_beat--;
+            break;
         case KEY_RESIZE:
             clear();
             // mvprintw(0, 0, "COLS = %d, LINES = %d", COLS, LINES);
@@ -126,6 +132,29 @@ int _update_sizes( MiniMidi_TUI *self )
     self->logical_size[0] = ( self->grid_size[0] - bars_in_screen ) / self->cols_in_beat;
 
     return 0;
+}
+
+
+bool _is_in_bounds( MiniMidi_TUI *self, int beat, int note )
+{
+    return beat > self->logical_start[0]
+        && beat < self->logical_start[0] + self->logical_size[0] 
+        && note > self->logical_start[1] 
+        && note < self->logical_start[1] + self->logical_size[1];
+}
+
+int _note_to_row_in_grid( MiniMidi_TUI *self, int note )
+{
+    int notes_on_grid = (note - self->logical_start[1]);
+    return self->grid_size[1] - notes_on_grid * LINES_PER_SEMITONE + 1;
+}
+
+int _beat_to_col_in_grid( MiniMidi_TUI *self, int beat )
+{
+    int beats_on_screen = (beat - self->logical_start[0]);
+    int delimiters_on_screen = beats_on_screen / self->beats_in_bar;
+
+    return GRID_LEFT_LABELS_WIDTH + 1 + beats_on_screen * self->cols_in_beat + delimiters_on_screen;
 }
 
 int _render_note_labels( MiniMidi_TUI *self )
@@ -177,29 +206,10 @@ int _render_info( MiniMidi_TUI *self)
     return 0;
 }
 
-// int _new_and_improved__render_grid( MiniMidi_TUI *self )
-// {
-//     int line_i, col_i, beat_counter, err;
-
-//     for (int i_note = self->logical_start[1]; i_note < self->logical_start[1] + self->logical_size[1]; i_note ++ )
-//     {
-//         line_i = GRID_PADDING_TOP + ((self->grid_size[1] - GRID_BOTT_LABELS_HEIGHT)- LINES_PER_SEMITONE * ( i_note - self->logical_start[1] ));
-//     }
-// }
-
-
 int _render_grid( MiniMidi_TUI *self )
 {
     int err;
-    int line_index, aux_line_index, col_index, beat_counter, bar_counter;
-    // MiniMidi_Event_List_Node *cursor;
-
-    // MiniMidi_get_events_in_tick_range(
-    //     self->file,
-    //     self->midi_events_list,
-    //     self->file->header->ppqn * self->logical_start[0],
-    //     self->file->header->ppqn * (self->logical_start[0] + self->logical_size[0]) );
-    // assert( self->logical_start[0] > 0 && self->logical_start[1] > 0 );
+    int line_index, aux_line_index, beat_counter;
 
     for (int i_note = self->logical_start[1]; i_note < self->logical_start[1] + self->logical_size[1]; i_note ++ )
     {
@@ -237,14 +247,70 @@ int _render_grid( MiniMidi_TUI *self )
         }
     }
 
-    // do a stupid block for test
-    mvwaddch(self->grid_derwin, 10, 10, ' '|A_REVERSE);
+    // mvwaddch(self->grid_derwin, 10, 10, ' '|A_REVERSE);
+    return 0;
+}
+
+
+int _render_midi( MiniMidi_TUI *self )
+{
+
+    MiniMidi_Event_List_Node *cursor;
+
+    // MiniMidi_get_events_in_tick_range(
+    //     self->file,
+    //     self->midi_events_list,
+    //     self->file->header->ppqn * self->logical_start[0],
+    //     self->file->header->ppqn * (self->logical_start[0] + self->logical_size[0]) );
+    MiniMidi_get_events_in_range(
+        self->file,
+        self->midi_events_list,
+        self->file->header->ppqn * self->logical_start[0],
+        self->file->header->ppqn * (self->logical_start[0] + self->logical_size[0]),
+        self->logical_start[1],
+        self->logical_start[1] + self->logical_size[1]
+    );
+
+
+    cursor = self->midi_events_list->first;
+    int cursor_beat, cursor_note, beat_col, note_line;
+
+    while (cursor)
+    {
+        cursor_beat = cursor->value->abs_ticks / self->file->header->ppqn;
+        cursor_note = ( cursor->value->note.octave * 12 ) + (int)( cursor->value->note.note );
+
+        if ( _is_in_bounds( self, cursor_beat, cursor_note ) )
+        {
+            beat_col = _beat_to_col_in_grid( self, cursor_beat );
+            note_line = _note_to_row_in_grid( self, cursor_note );
+            // draw this fucker
+            if ( cursor->value->status_code == MIDI_NOTE_ON )
+            {
+
+                MiniMidi_Log_dumb_append( self->logger, MiniMidi_Log_format_string_static("Writing evt: beat:%d, note:%d", beat_col, note_line));
+                // MiniMidi_Log_flush( self->logger );
+
+                // do a stupid block for test
+                // mvwaddch(self->grid_derwin, 10, 10, ' '|A_REVERSE);
+                mvwaddch( self->grid_derwin, note_line, beat_col, 'x' |A_REVERSE);
+
+            } else if ( cursor->value->status_code == MIDI_NOTE_OFF )
+            {
+
+            }
+        }
+
+        cursor = cursor->next;
+    }
+
+
     return 0;
 }
 /**
  * PUBLIC
  */
-int MiniMidi_TUI_init( MiniMidi_TUI *self, MiniMidi_File *file )
+int MiniMidi_TUI_init( MiniMidi_TUI *self, MiniMidi_File *file, MiniMidi_Log *_logger )
 {
     self->is_dirty = false;
     self->is_running = true;
@@ -269,7 +335,7 @@ int MiniMidi_TUI_init( MiniMidi_TUI *self, MiniMidi_File *file )
     //
     self->file = file;
     self->midi_events_list = MiniMidi_Event_LList_init();
-
+    self->logger = _logger;
   
     if ( _init_ncurses(self) ) return 1;
 
@@ -277,6 +343,17 @@ int MiniMidi_TUI_init( MiniMidi_TUI *self, MiniMidi_File *file )
     // memset(&sa, 0, sizeof(struct sigaction));
     // sa.sa_handler = handle_winch;
     // sigaction(SIGWINCH, &sa, NULL);
+
+    // log stuff
+    char log_helper[50];
+    for (int i = 0; i < self->file->track->n_events; i ++)
+    {
+        MiniMidi_Event_to_string_log( 
+            &(self->file->track->event_arr[i]),
+            log_helper );
+        
+        MiniMidi_Log_dumb_append(self->logger, log_helper);
+    }
 
     return 0;
 }
@@ -298,6 +375,7 @@ int MiniMidi_TUI_render( MiniMidi_TUI *self )
     if (_render_info( self )) return 1;
     if (_render_note_labels( self )) return 1;
     if (_render_grid( self )) return 1;
+    if (_render_midi( self )) return 1;
 
     box( self->grid_derwin, '|', '=' );
 

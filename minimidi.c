@@ -72,8 +72,6 @@ MidiStatusCode get_midi_status_code( _Byte *byte)
 }
 
 
-
-
 void print_midi_status_code(MidiStatusCode status)
 {
     printf(CYAN "MIDI Status: " RESET);
@@ -578,6 +576,81 @@ void MiniMidi_Event_print( MiniMidi_Event *me )
     printf(TAB TAB "----\n");
 }
 
+// FOR LOGGINING
+void _midi_note_to_str(MidiNote note, char *str)
+{
+
+    switch (note.note) {
+        case C:
+            sprintf(str, "C%d", note.octave );
+            break;
+        case Cs:
+            sprintf(str, "C#%d", note.octave );
+            break;
+        case D:
+            sprintf(str, "D%d", note.octave );
+            break;
+        case Ds:
+            sprintf(str, "D#%d", note.octave );
+            break;
+        case E:
+            sprintf(str, "E%d", note.octave );
+            break;
+        case F:
+            sprintf(str, "F%d", note.octave );
+            break;
+        case Fs:
+            sprintf(str, "F#%d", note.octave );
+            break;
+        case G:
+            sprintf(str, "G%d", note.octave );
+            break;
+        case Gs:
+            sprintf(str, "G#%d", note.octave );
+            break;
+        case A:
+            sprintf(str, "A%d", note.octave );
+            break;
+        case As:
+            sprintf(str, "A#%d", note.octave );
+            break;
+        case B:
+            sprintf(str, "B%d", note.octave );
+            break;
+        default:
+            sprintf(str, "XX");
+            break;
+    }
+
+    printf(" Oct: %hu ", note.octave );
+}
+
+void _midi_status_code_to_str( MidiStatusCode status, char* str )
+{
+    switch (status)
+    {
+        case MIDI_NOTE_OFF:
+            sprintf( str, "NOTE_OFF" );
+            break;
+        case MIDI_NOTE_ON:
+            sprintf( str, "NOTE_ON" );
+            break;
+        default:
+            sprintf( str, "OTHER");
+    }
+}
+
+void MiniMidi_Event_to_string_log( MiniMidi_Event *me, char *str )
+{
+    char aux_str[16]; // for status code translation
+    char note_str[8];
+
+    _midi_note_to_str(me->note, note_str);
+    _midi_status_code_to_str(me->status_code, aux_str);
+
+    sprintf( str, "EVT: ticks=%d, note=%s, status=%s", me->abs_ticks, note_str, aux_str );
+
+}
 
 
 
@@ -776,21 +849,25 @@ int MiniMidi_Event_List_destroy(MiniMidi_Event_List*self)
     return 0;
 }
 
-int MiniMidi_get_events_in_tick_range( MiniMidi_File *self, MiniMidi_Event_List *cntnr, int start_ticks, int end_ticks )
+int MiniMidi_get_events_in_range( MiniMidi_File *self,  MiniMidi_Event_List *list, int start_ticks, int end_ticks, int start_note, int end_note )
 {
-    _emptyList(cntnr);
+    _emptyList(list);
+    MiniMidi_Event *evt;
 
-    int start_index = _find_index_for_ticks_gt_eq(start_ticks, self->track->event_arr, self->track->n_events);
-    int end_index = _find_index_for_ticks_lt_eq(start_ticks, self->track->event_arr, self->track->n_events);
 
-    assert(start_index > -1 && end_index > -1);
-
-    for (int i = start_index; i < end_index; i++)
+    for (int i = 0; i < self->track->n_events; i++ )
     {
-        MiniMidi_Event_List_append(cntnr, &( self->track->event_arr[i] ));
-    }
+        evt = &(self->track->event_arr[i]);
 
-    // _print_list(cntnr);
+        if ( evt->abs_ticks >= start_ticks 
+            && evt->abs_ticks <= end_ticks 
+            && midi_note_to_int( &(evt->note) ) >= start_note
+            && midi_note_to_int( &(evt->note) ) <= end_note
+        )
+        {
+            MiniMidi_Event_List_append(list, evt);
+        }
+    }
 
     return 0;
 }

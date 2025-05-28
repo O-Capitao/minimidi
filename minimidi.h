@@ -48,6 +48,7 @@ typedef struct {
     unsigned short octave;
 } MidiNote;
 
+
 // Utility  Functions
 // MidiStatusCode
 MidiStatusCode get_midi_status_code( _Byte *byte);
@@ -163,9 +164,6 @@ MiniMidi_Event_List      *MiniMidi_Event_LList_init();
 
 int MiniMidi_Event_List_destroy(MiniMidi_Event_List*self);
 int MiniMidi_Event_List_append(MiniMidi_Event_List*self, MiniMidi_Event *v);
-// query events
-int MiniMidi_get_events_in_tick_range( MiniMidi_File *self, MiniMidi_Event_List *container, int start_ticks, int end_ticks );
-int MiniMidi_Event_List_filter_octave_range( MiniMidi_Event_List *self, int start_oct, int end_oct );
-
-
+int MiniMidi_get_events_in_range( MiniMidi_File *self, MiniMidi_Event_List *list, int start_ticks, int end_ticks, int start_note, int end_note );
+void MiniMidi_Event_to_string_log( MiniMidi_Event *me, char *str );
 #endif /* MINIMIDI_H */

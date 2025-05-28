@@ -4,6 +4,7 @@
 #include "globals.h"
 #include "minimidi.h"
 #include "minimidi-tui.h"
+#include "minimidi-log.h"
 
 #define ARG_MAX_LEN 100
 
@@ -56,6 +57,9 @@ int main( int argc, char *argv[] )
         }
     }
 
+    // init logger
+    MiniMidi_Log *logger = MiniMidi_Log_init();
+
     // Read the file passed in by arg
     MiniMidi_File *midi_file = MiniMidi_File_read_from_file( argv[1] );
     if (midi_file == NULL) {
@@ -64,7 +68,7 @@ int main( int argc, char *argv[] )
     }
 
     MiniMidi_TUI *ui = (MiniMidi_TUI*)malloc( sizeof( MiniMidi_TUI ) );
-    MiniMidi_TUI_init(ui, midi_file);
+    MiniMidi_TUI_init(ui, midi_file, logger);
 
     int ERRSTATUS = 0;
 
@@ -75,6 +79,7 @@ int main( int argc, char *argv[] )
     }
 
     quit(ui, midi_file, ERRSTATUS ? true: false);
+    MiniMidi_Log_free( logger );
 
     return 0;
 }
