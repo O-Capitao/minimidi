@@ -6,6 +6,7 @@
 #include <stdbool.h>
 
 #include "globals.h"
+#include "minimidi-log.h"
 
 // size of a buffer used to bring events to a caller fn,
 // e.g. by searching
@@ -48,27 +49,6 @@ typedef struct {
     unsigned short octave;
 } MidiNote;
 
-
-// Utility  Functions
-// MidiStatusCode
-MidiStatusCode get_midi_status_code( _Byte *byte);
-void           print_midi_status_code(MidiStatusCode status);
-uint8_t        get_midi_data_byte_count(MidiStatusCode status);
-
-MidiNote       event_data_bytes_to_note( _Byte event_data_byte);
-int            midi_note_to_int( MidiNote *note );
-
-
-bool compare_MidiNote( MidiNote *n1, MidiNote *n2 );
-
-void           print_midi_note(MidiNote note);
-
-// Byte stuff utilities
-void   reverse_byte_array(_Byte* arr, size_t len);
-void   extract_number_from_byte_array( void* tgt, _Byte* src, size_t start_ind, size_t len );
-void   get_substring( _Byte *src_str, _Byte* tgt_str, size_t start_index, size_t n_elements_to_copy, bool add_null_termination );
-size_t read_VLQ_delta_t( _Byte *bytes, size_t len, uint64_t *val_ptr);
-
 /****************************************************************************************
 *
 *
@@ -109,39 +89,31 @@ typedef struct MiniMidi_Track
 
 
 
-/**
- * MAIN STRUCTURE
- */
+/****************************************************************************************
+*
+*
+*   -> Main Exposed Structure -> Midi File
+****************************************************************************************/
 typedef struct MiniMidi_File
 {
-    char *filepath;
+    char                 *filepath;
     MiniMidi_Header      *header;
     MiniMidi_Track       *track;
     size_t               length;
+    MiniMidi_Log         *logger;
 
 } MiniMidi_File;
 
-void                parse_track_events( MiniMidi_Track *track, _Byte *evts_chunk );
-
-
-MiniMidi_Header     *MiniMidi_Header_read(_Byte *file_contents );
-void                MiniMidi_Header_print( MiniMidi_Header *mh );
-void                MiniMidi_Header_free( MiniMidi_Header *header );
-
-MiniMidi_Track      *MiniMidi_Track_read( _Byte *file_content, size_t start_index, size_t total_chunk_len );
-void                MiniMidi_Track_print( MiniMidi_Track *mt );
-void                MiniMidi_Track_free( MiniMidi_Track *track );
-void                MiniMidi_Event_print( MiniMidi_Event *me );
-
-MiniMidi_File       *MiniMidi_File_read_from_file( char *file_path );
+MiniMidi_File       *MiniMidi_File_init( char *file_path, MiniMidi_Log *logger_inst );
 void                MiniMidi_File_print( MiniMidi_File *file );
 void                MiniMidi_File_free( MiniMidi_File *file );
 
 
-
-
-// AUX STRUCTURES
-// use this to pass items into outside
+/****************************************************************************************
+*
+*
+*   -> Aux Data Structures -> For lookup / state edit
+****************************************************************************************/
 typedef struct MiniMidi_Event_List_Node
 {
     MiniMidi_Event *value;
@@ -159,11 +131,9 @@ typedef struct MiniMidi_Event_List
    
 } MiniMidi_Event_List;
 
-// MiniMidi_Event_List_Node *MiniMidi_Event_LList_Node_init(MiniMidi_Event *v);
 MiniMidi_Event_List      *MiniMidi_Event_LList_init();
 
-int MiniMidi_Event_List_destroy(MiniMidi_Event_List*self);
-int MiniMidi_Event_List_append(MiniMidi_Event_List*self, MiniMidi_Event *v);
 int MiniMidi_get_events_in_range( MiniMidi_File *self, MiniMidi_Event_List *list, int start_ticks, int end_ticks, int start_note, int end_note );
 void MiniMidi_Event_to_string_log( MiniMidi_Event *me, char *str );
+
 #endif /* MINIMIDI_H */

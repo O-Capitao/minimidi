@@ -55,7 +55,7 @@ int MiniMidi_Log_dumb_append( MiniMidi_Log *self, char *text )
     time_t now = time(NULL);
     struct tm *t = localtime(&now);
 
-    strftime(date_time_header, sizeof(date_time_header)-1, "[%d/%m/%Y . %H:%M:%S]", t);
+    strftime(date_time_header, sizeof(date_time_header)-1, "[ %d/%m/%Y . %H:%M:%S ]", t);
     fprintf( self->file, "%s : %s\n", date_time_header, text );
 
     return 0;

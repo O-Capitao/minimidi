@@ -39,7 +39,7 @@ void print_byte_as_binary(_Byte *byte, int little_endian)
 
 
 // Function to get MIDI Status Code from a byte
-MidiStatusCode get_midi_status_code( _Byte *byte)
+MidiStatusCode _get_midi_status_code( _Byte *byte)
 {
     // Extract the status nibble (upper 4 bits)
     _Byte status = *byte & 0xF0;
@@ -72,7 +72,7 @@ MidiStatusCode get_midi_status_code( _Byte *byte)
 }
 
 
-void print_midi_status_code(MidiStatusCode status)
+void _print_midi_status_code(MidiStatusCode status)
 {
     printf(CYAN "MIDI Status: " RESET);
     
@@ -113,7 +113,7 @@ void print_midi_status_code(MidiStatusCode status)
 
 
 
-uint8_t get_midi_data_byte_count(MidiStatusCode status)
+uint8_t _get_midi_data_byte_count(MidiStatusCode status)
 {
 
     switch (status) {
@@ -142,7 +142,7 @@ uint8_t get_midi_data_byte_count(MidiStatusCode status)
 
 
 
-MidiNote event_data_bytes_to_note( _Byte event_data_byte )
+MidiNote _event_data_bytes_to_note( _Byte event_data_byte )
 {
 
     MidiNote result;
@@ -166,7 +166,7 @@ MidiNote event_data_bytes_to_note( _Byte event_data_byte )
 
 
 
-void print_midi_note(MidiNote note)
+void _print_midi_note(MidiNote note)
 {
 
     switch (note.note) {
@@ -215,17 +215,17 @@ void print_midi_note(MidiNote note)
 }
 
 
-bool compare_MidiNote(MidiNote *a, MidiNote *b)
+bool _compare_MidiNote(MidiNote *a, MidiNote *b)
 {
     return (a->note == b->note) && (a->octave == b->octave);
 }
 
-int midi_note_to_int( MidiNote *n )
+int _midi_note_to_int( MidiNote *n )
 {
     return (int)(n->note) + (n->octave) * 12;
 }
 
-void reverse_byte_array(_Byte* arr, size_t len)
+void _reverse_byte_array(_Byte* arr, size_t len)
 {
     _Byte aux;
     for (size_t i = 0; i < len / 2; i++)
@@ -239,19 +239,19 @@ void reverse_byte_array(_Byte* arr, size_t len)
 
 
 
-void extract_number_from_byte_array( void* tgt, _Byte* src, size_t start_ind, size_t len )
+void _extract_number_from_byte_array( void* tgt, _Byte* src, size_t start_ind, size_t len )
 {
     _Byte extracted_bytes[len];
     memcpy( extracted_bytes, &src[start_ind], len );
 
-    reverse_byte_array( extracted_bytes, len );
+    _reverse_byte_array( extracted_bytes, len );
     memcpy(tgt, extracted_bytes, len);
 }
 
 
 
 
-void get_substring(_Byte *src_str, _Byte* tgt_str, size_t start_index, size_t n_elements_to_copy, bool add_null_termination )
+void _get_substring(_Byte *src_str, _Byte* tgt_str, size_t start_index, size_t n_elements_to_copy, bool add_null_termination )
 {
     memcpy( tgt_str, &src_str[start_index], n_elements_to_copy );
 
@@ -264,7 +264,7 @@ void get_substring(_Byte *src_str, _Byte* tgt_str, size_t start_index, size_t n_
 
 
 
-size_t read_VLQ_delta_t( _Byte *bytes, size_t len, uint64_t *val_ptr)
+size_t _read_VLQ_delta_t( _Byte *bytes, size_t len, uint64_t *val_ptr)
 {
     size_t _index = 0;
     _Byte _curr_byte;
@@ -315,7 +315,7 @@ size_t read_VLQ_delta_t( _Byte *bytes, size_t len, uint64_t *val_ptr)
 *
 *   -> Main Struct Methods
 ****************************************************************************************/
-void parse_track_events( MiniMidi_Track *track, _Byte *evts_chunk )
+void _parse_track_events( MiniMidi_Track *track, _Byte *evts_chunk )
 {
     track->total_ticks = 0;
     
@@ -345,7 +345,7 @@ void parse_track_events( MiniMidi_Track *track, _Byte *evts_chunk )
         evt.next = NULL;
         evt.prev = NULL;
 
-        _byte_counter += read_VLQ_delta_t( evts_chunk + _byte_counter, track->length - _byte_counter, &(evt.delta_ticks));
+        _byte_counter += _read_VLQ_delta_t( evts_chunk + _byte_counter, track->length - _byte_counter, &(evt.delta_ticks));
         track->total_ticks += evt.delta_ticks;
         evt.abs_ticks = track->total_ticks;
 
@@ -362,7 +362,7 @@ void parse_track_events( MiniMidi_Track *track, _Byte *evts_chunk )
         if ( *(evts_chunk + _byte_counter) >= 0x80 )
         {
             // This is a new status byte (has the high bit set)
-            evt.status_code = get_midi_status_code((evts_chunk + _byte_counter));
+            evt.status_code = _get_midi_status_code((evts_chunk + _byte_counter));
             _last_status_byte = (evts_chunk + _byte_counter);  // Remember for running status
             _byte_counter++;
 
@@ -372,7 +372,7 @@ void parse_track_events( MiniMidi_Track *track, _Byte *evts_chunk )
             /* DEBUG IT */ printf( TAB TAB RED "Status is Running!\n" RESET );
 #endif
 
-            evt.status_code = get_midi_status_code(_last_status_byte);
+            evt.status_code = _get_midi_status_code(_last_status_byte);
             // Note: byte_counter not incremented here, since there's no status byte.
         }
 
@@ -382,9 +382,9 @@ void parse_track_events( MiniMidi_Track *track, _Byte *evts_chunk )
         }
 #if DEBUG
         /* DEBUG IT */ printf( TAB TAB GREEN "Status Code: " RESET );
-         /* DEBUG IT */ print_midi_status_code( evt.status_code );
+         /* DEBUG IT */ _print_midi_status_code( evt.status_code );
 #endif
-         _data_bytes_count = get_midi_data_byte_count( evt.status_code );
+         _data_bytes_count = _get_midi_data_byte_count( evt.status_code );
 #if DEBUG
         /* DEBUG IT */ printf( TAB TAB "Event has %li data bytes: " RESET, _data_bytes_count);
 #endif
@@ -395,9 +395,9 @@ void parse_track_events( MiniMidi_Track *track, _Byte *evts_chunk )
         //  when evt is a Note On, and never elses
         if (evt.status_code == MIDI_NOTE_ON || evt.status_code == MIDI_NOTE_OFF)
         {
-            evt.note = event_data_bytes_to_note(*(evts_chunk + _byte_counter));
+            evt.note = _event_data_bytes_to_note(*(evts_chunk + _byte_counter));
 #if DEBUG
-            print_midi_note(evt.note);
+            _print_midi_note(evt.note);
             printf("\n");
 #endif
         }
@@ -485,7 +485,7 @@ int hook_up_events( MiniMidi_Event *arr, size_t n )
             for (int j = i; j < n; j++)
             {
                 cursor2 = &(arr[j]);
-                if ( cursor2->status_code == MIDI_NOTE_OFF && compare_MidiNote( &(cursor->note), &(cursor2->note) ))
+                if ( cursor2->status_code == MIDI_NOTE_OFF && _compare_MidiNote( &(cursor->note), &(cursor2->note) ))
                 {
                     hook_counter++;
                     cursor->next = cursor2;
@@ -499,19 +499,19 @@ int hook_up_events( MiniMidi_Event *arr, size_t n )
 }
 
 // "Class" Methods
-MiniMidi_Header *MiniMidi_Header_read( _Byte *file_contents )
+MiniMidi_Header *_midi_header_read( _Byte *file_contents )
 {
 
     MiniMidi_Header *retval = (MiniMidi_Header*)malloc( sizeof( struct MiniMidi_Header ) );
     if (!retval) return NULL; 
     
     uint32_t aux_for_chunk_size;
-    extract_number_from_byte_array( &aux_for_chunk_size, file_contents, 4, 4 );
+    _extract_number_from_byte_array( &aux_for_chunk_size, file_contents, 4, 4 );
     retval->length = (size_t)aux_for_chunk_size;
 
-    extract_number_from_byte_array( &(retval->format), file_contents, 8, 2 );
-    extract_number_from_byte_array( &(retval->ntrks), file_contents, 10, 2 );
-    extract_number_from_byte_array( &(retval->ppqn), file_contents, 12, 2 );
+    _extract_number_from_byte_array( &(retval->format), file_contents, 8, 2 );
+    _extract_number_from_byte_array( &(retval->ntrks), file_contents, 10, 2 );
+    _extract_number_from_byte_array( &(retval->ppqn), file_contents, 12, 2 );
 
     return retval;
 }
@@ -536,12 +536,12 @@ MiniMidi_Track *MiniMidi_Track_read( _Byte *file_content, size_t start_index, si
     size_t max_events = track->length / 3;
     track->event_arr = (MiniMidi_Event*)malloc( max_events * sizeof( MiniMidi_Event ) );
 
-    extract_number_from_byte_array( &(track->length), file_content, start_index + 4, 4 );
-    get_substring(file_content, _track_bin_data, start_index + 8, track->length, false );
+    _extract_number_from_byte_array( &(track->length), file_content, start_index + 4, 4 );
+    _get_substring(file_content, _track_bin_data, start_index + 8, track->length, false );
 
     //      total                                    + Chunk Id + Chunk len
     assert( total_chunk_len == ( start_index + track->length + 4        + 4 ));
-    parse_track_events( track, _track_bin_data );
+    _parse_track_events( track, _track_bin_data );
     hook_up_events( track->event_arr, track->n_events );
 
     return track;
@@ -561,6 +561,12 @@ void MiniMidi_Header_print( MiniMidi_Header *mh )
 }
 
 
+void MiniMidi_Header_log( MiniMidi_Header *mh, char *str )
+{
+    sprintf(str, "MiniMidi_Header: Chunk Size: %zu, PPQN: %i.", mh->length, mh->ppqn);
+}
+
+
 
 
 void MiniMidi_Event_print( MiniMidi_Event *me )
@@ -568,10 +574,10 @@ void MiniMidi_Event_print( MiniMidi_Event *me )
     printf(TAB TAB "Event:\n");
     printf(TAB TAB "Delta: %lu ticks\n", me->delta_ticks );
     printf(TAB TAB "Status Code: ");
-    print_midi_status_code(me->status_code);
+    _print_midi_status_code(me->status_code);
     printf("\n");
     printf(TAB TAB "Note: ");
-    print_midi_note(me->note);
+    _print_midi_note(me->note);
     printf("\n");
     printf(TAB TAB "----\n");
 }
@@ -648,7 +654,7 @@ void MiniMidi_Event_to_string_log( MiniMidi_Event *me, char *str )
     _midi_note_to_str(me->note, note_str);
     _midi_status_code_to_str(me->status_code, aux_str);
 
-    sprintf( str, "EVT: ticks=%d, note=%s, status=%s", me->abs_ticks, note_str, aux_str );
+    sprintf( str, "EVT: ticks=%ld, note=%s, status=%s", me->abs_ticks, note_str, aux_str );
 
 }
 
@@ -696,7 +702,14 @@ void MiniMidi_File_print( MiniMidi_File *file )
     MiniMidi_Track_print( file->track );
 }
 
-MiniMidi_File * MiniMidi_File_read_from_file( char *file_path )
+void MiniMidi_File_log_summary( MiniMidi_File *self, char *text )
+{
+    char str[LOG_LINE_MAX_LEN];
+    MiniMidi_Header_log(self->header, str );
+
+}
+
+MiniMidi_File * MiniMidi_File_init( char *file_path, MiniMidi_Log *l_i )
 {
     MiniMidi_File *retval = create_mini_midi_file( file_path );
     
@@ -706,8 +719,10 @@ MiniMidi_File * MiniMidi_File_read_from_file( char *file_path )
     fileptr = fopen( file_path, "rb" );
     _Byte * buffer = 0;
     size_t length;
-    // retval->buffer_index = 0;
+    retval->logger = l_i;
 
+    int freadres = 0;
+    
     if (fileptr)
     {
         fseek (fileptr, 0, SEEK_END);
@@ -719,7 +734,7 @@ MiniMidi_File * MiniMidi_File_read_from_file( char *file_path )
         if (buffer)
         {
             // fread returns read bytes.
-            int freadres = fread (buffer, 1, length, fileptr);
+            freadres = fread (buffer, 1, length, fileptr);
             printf(GREEN "Success" RESET " Read %i bytes.\n", freadres);
         }
 
@@ -727,13 +742,18 @@ MiniMidi_File * MiniMidi_File_read_from_file( char *file_path )
     }
 
     retval->length = length;
-    retval->header = MiniMidi_Header_read( buffer );
+    retval->header = _midi_header_read( buffer );
     retval->track = MiniMidi_Track_read( buffer, 14, length );
     retval->track->total_beats = (retval->track->total_ticks / retval->header->ppqn) + 1;
     // retval->tree = MiniMidi_SegmentTree_init( retval->track->event_arr, retval->track->n_events );
     
 
     free( buffer );
+
+    // log
+    // ! HERE
+    // char log_line[ LOG_LINE_MAX_LEN ];
+    // sprintf(log_line, "MiniMidi_File : parsed %d bytes, got %d events.", freadres,  )
 
     return retval;
 }
@@ -790,7 +810,7 @@ void _print_list( MiniMidi_Event_List*self )
     while ( n )
     {
         printf("\n\nNode %d: at %li ticks\n", i++, n->next->value->abs_ticks);
-        print_midi_note( n->value->note );
+        _print_midi_note( n->value->note );
         n = n->next;
     }
 }
@@ -859,15 +879,16 @@ int MiniMidi_get_events_in_range( MiniMidi_File *self,  MiniMidi_Event_List *lis
     {
         evt = &(self->track->event_arr[i]);
 
-        if ( evt->abs_ticks >= start_ticks 
-            && evt->abs_ticks <= end_ticks 
-            && midi_note_to_int( &(evt->note) ) >= start_note
-            && midi_note_to_int( &(evt->note) ) <= end_note
-        )
+        if ( evt->abs_ticks >= start_ticks && evt->abs_ticks <= end_ticks 
+            && _midi_note_to_int( &(evt->note) ) >= start_note && _midi_note_to_int( &(evt->note) ) <= end_note )
         {
             MiniMidi_Event_List_append(list, evt);
         }
     }
+
+    char log_line[128];
+    sprintf( log_line, "MiniMidi_get_events_in_range :: there are %ld events on screen.", list->length );
+    MiniMidi_Log_dumb_append( self->logger, log_line );
 
     return 0;
 }

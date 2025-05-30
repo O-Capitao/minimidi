@@ -6,6 +6,7 @@
 
 
 #define BUFFER_SIZE 1024
+#define LOG_LINE_MAX_LEN 128
 
 typedef struct MiniMidi_Log
 {

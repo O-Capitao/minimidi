@@ -61,7 +61,7 @@ int main( int argc, char *argv[] )
     MiniMidi_Log *logger = MiniMidi_Log_init();
 
     // Read the file passed in by arg
-    MiniMidi_File *midi_file = MiniMidi_File_read_from_file( argv[1] );
+    MiniMidi_File *midi_file = MiniMidi_File_init( argv[1] , logger );
     if (midi_file == NULL) {
         printf(RED "ERROR" RESET " Failed to read MIDI file: %s\n", argv[1]);
         return 1;

@@ -257,11 +257,6 @@ int _render_midi( MiniMidi_TUI *self )
 
     MiniMidi_Event_List_Node *cursor;
 
-    // MiniMidi_get_events_in_tick_range(
-    //     self->file,
-    //     self->midi_events_list,
-    //     self->file->header->ppqn * self->logical_start[0],
-    //     self->file->header->ppqn * (self->logical_start[0] + self->logical_size[0]) );
     MiniMidi_get_events_in_range(
         self->file,
         self->midi_events_list,
@@ -289,10 +284,6 @@ int _render_midi( MiniMidi_TUI *self )
             {
 
                 MiniMidi_Log_dumb_append( self->logger, MiniMidi_Log_format_string_static("Writing evt: beat:%d, note:%d", beat_col, note_line));
-                // MiniMidi_Log_flush( self->logger );
-
-                // do a stupid block for test
-                // mvwaddch(self->grid_derwin, 10, 10, ' '|A_REVERSE);
                 mvwaddch( self->grid_derwin, note_line, beat_col, 'x' |A_REVERSE);
 
             } else if ( cursor->value->status_code == MIDI_NOTE_OFF )
@@ -339,21 +330,17 @@ int MiniMidi_TUI_init( MiniMidi_TUI *self, MiniMidi_File *file, MiniMidi_Log *_l
   
     if ( _init_ncurses(self) ) return 1;
 
-    // struct sigaction sa;
-    // memset(&sa, 0, sizeof(struct sigaction));
-    // sa.sa_handler = handle_winch;
-    // sigaction(SIGWINCH, &sa, NULL);
-
     // log stuff
-    char log_helper[50];
-    for (int i = 0; i < self->file->track->n_events; i ++)
-    {
-        MiniMidi_Event_to_string_log( 
-            &(self->file->track->event_arr[i]),
-            log_helper );
+    char log_helper[ LOG_LINE_MAX_LEN ];
+
+    // for (int i = 0; i < self->file->track->n_events; i ++)
+    // {
+    //     MiniMidi_Event_to_string_log( 
+    //         &(self->file->track->event_arr[i]),
+    //         log_helper );
         
-        MiniMidi_Log_dumb_append(self->logger, log_helper);
-    }
+    //     MiniMidi_Log_dumb_append(self->logger, log_helper);
+    // }
 
     return 0;
 }
