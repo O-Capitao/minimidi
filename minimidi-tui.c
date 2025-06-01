@@ -5,7 +5,7 @@
 /**
  * Constants
  */
-static const char *ALL_NOTES[] = {"A", "Bb", "B", "C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab" };
+static const char *ALL_NOTES[] = { "C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B" };
 static const int OCT_RANGE = 8;
 static const int MAX_NOTE_VAL = OCT_RANGE * 12;
 
@@ -143,11 +143,25 @@ bool _is_in_bounds( MiniMidi_TUI *self, int beat, int note )
         && note < self->logical_start[1] + self->logical_size[1];
 }
 
-int _note_to_row_in_grid( MiniMidi_TUI *self, int note )
+
+/**
+ * ! COORDINATE TRANSFORMS
+ * 
+ *  beat <-> col in grid
+ *  note <-> row in grid
+ *
+ */
+int _note_number_to_row_in_grid( MiniMidi_TUI *self, int note )
 {
-    int notes_on_grid = (note - self->logical_start[1]);
-    return self->grid_size[1] - notes_on_grid * LINES_PER_SEMITONE + 1;
+    int notes_above = self->logical_size[1] - note;
+    return self->grid_size[1] - notes_above * LINES_PER_SEMITONE + 1;
 }
+
+int _midi_note_to_row_in_grid( MiniMidi_TUI *self, MidiNote *note )
+{
+    return _note_number_to_row_in_grid( self, 12 * note->octave + (int)(note->note) );
+}
+
 
 int _beat_to_col_in_grid( MiniMidi_TUI *self, int beat )
 {
@@ -166,7 +180,8 @@ int _render_note_labels( MiniMidi_TUI *self )
     
     for (int i_note = self->logical_start[1]; i_note < self->logical_start[1] + self->logical_size[1]; i_note ++ )
     {
-        line_index = GRID_PADDING_TOP + (( self->grid_size[1] - GRID_BOTT_LABELS_HEIGHT) - LINES_PER_SEMITONE * ( i_note - self->logical_start[1] ));
+        line_index = _note_number_to_row_in_grid( self, i_note );
+        //GRID_PADDING_TOP + (( self->grid_size[1] - GRID_BOTT_LABELS_HEIGHT) - LINES_PER_SEMITONE * ( i_note - self->logical_start[1] ));
         assert(line_index > 0 && line_index < self->grid_size[1]);
 
         oct = i_note / 12;
@@ -214,7 +229,8 @@ int _render_grid( MiniMidi_TUI *self )
     for (int i_note = self->logical_start[1]; i_note < self->logical_start[1] + self->logical_size[1]; i_note ++ )
     {
         // get a terminal line nr to draw on
-        line_index = GRID_PADDING_TOP + ((self->grid_size[1] - GRID_BOTT_LABELS_HEIGHT)- LINES_PER_SEMITONE * ( i_note - self->logical_start[1] ));
+        line_index = _note_number_to_row_in_grid( self, i_note );
+        //GRID_PADDING_TOP + ((self->grid_size[1] - GRID_BOTT_LABELS_HEIGHT)- LINES_PER_SEMITONE * ( i_note - self->logical_start[1] ));
         
         assert(line_index > 0 && line_index < self->grid_size[1]);
         aux_line_index = line_index - 1;
@@ -278,12 +294,13 @@ int _render_midi( MiniMidi_TUI *self )
         if ( _is_in_bounds( self, cursor_beat, cursor_note ) )
         {
             beat_col = _beat_to_col_in_grid( self, cursor_beat );
-            note_line = _note_to_row_in_grid( self, cursor_note );
+            note_line = _midi_note_to_row_in_grid( self, &(cursor->value->note) );
+            
             // draw this fucker
             if ( cursor->value->status_code == MIDI_NOTE_ON )
             {
 
-                MiniMidi_Log_dumb_append( self->logger, MiniMidi_Log_format_string_static("Writing evt: beat:%d, note:%d", beat_col, note_line));
+                // MiniMidi_Log_dumb_append( self->logger, MiniMidi_Log_format_string_static("Writing evt: beat:%d, note:%d", beat_col, note_line));
                 mvwaddch( self->grid_derwin, note_line, beat_col, 'x' |A_REVERSE);
 
             } else if ( cursor->value->status_code == MIDI_NOTE_OFF )

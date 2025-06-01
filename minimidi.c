@@ -452,24 +452,6 @@ MiniMidi_File* create_mini_midi_file(const char *filepath) {
     return midi_file;
 }
 
-void destroy_mini_midi_file(MiniMidi_File *midi_file)
-{
-    if (!midi_file) return;
-
-    if (midi_file->filepath) free(midi_file->filepath);
-    if (midi_file->header) free(midi_file->header);
-
-    if (midi_file->track) {
-        // Free event array if it exists
-        if (midi_file->track->event_arr) {
-            free(midi_file->track->event_arr);
-        }
-        free(midi_file->track);
-    }
-
-    free(midi_file);
-}
-
 int hook_up_events( MiniMidi_Event *arr, size_t n )
 {
     int hook_counter = 0;
@@ -559,15 +541,6 @@ void MiniMidi_Header_print( MiniMidi_Header *mh )
     printf(TAB WHITE "Division:" RESET " %i PPQN.\n", mh->ppqn);
     printf("---------------------------\n");
 }
-
-
-void MiniMidi_Header_log( MiniMidi_Header *mh, char *str )
-{
-    sprintf(str, "MiniMidi_Header: Chunk Size: %zu, PPQN: %i.", mh->length, mh->ppqn);
-}
-
-
-
 
 void MiniMidi_Event_print( MiniMidi_Event *me )
 {
@@ -662,9 +635,9 @@ void MiniMidi_Event_to_string_log( MiniMidi_Event *me, char *str )
 
 void MiniMidi_Track_print( MiniMidi_Track *mt )
 {
-    printf(BOLDWHITE "TRACK:" RESET "\n---------------------------\n");
-    printf(TAB WHITE "Chunk Size:" RESET BOLDWHITE" %li" RESET " bytes\n", mt->length );
-    printf(TAB WHITE "Number of Events: %li \n" RESET, mt->n_events );
+    printf( BOLDWHITE "TRACK:" RESET "\n---------------------------\n");
+    printf( TAB WHITE "Chunk Size:" RESET BOLDWHITE" %li" RESET " bytes\n", mt->length );
+    printf( TAB WHITE "Number of Events: %li \n" RESET, mt->n_events );
 
     for (int i = 0; i < mt->n_events; i++ ){
         MiniMidi_Event_print( &(mt->event_arr[i]) );
@@ -674,39 +647,28 @@ void MiniMidi_Track_print( MiniMidi_Track *mt )
     
 }
 
-
-
-
-void MiniMidi_Header_free( MiniMidi_Header *header )
+void MiniMidi_File_free( MiniMidi_File *self )
 {
-    free( header );
-}
+    if (!self) return;
 
-void MiniMidi_Track_free( MiniMidi_Track *track )
-{
-    free( track->event_arr);
-    free( track );
-}
+    if (self->filepath) free(self->filepath);
+    if (self->header) free(self->header);
 
-void MiniMidi_File_free( MiniMidi_File *file )
-{
-    // MiniMidi_Header_free( file->header );
-    // MiniMidi_Track_free( file->track );
-    // free( file );
-    destroy_mini_midi_file(file);
+    if (self->track) {
+        // Free event array if it exists
+        if (self->track->event_arr) {
+            free(self->track->event_arr);
+        }
+        free(self->track);
+    }
+
+    free(self);
 }
 
 void MiniMidi_File_print( MiniMidi_File *file )
 {
     MiniMidi_Header_print( file->header );
     MiniMidi_Track_print( file->track );
-}
-
-void MiniMidi_File_log_summary( MiniMidi_File *self, char *text )
-{
-    char str[LOG_LINE_MAX_LEN];
-    MiniMidi_Header_log(self->header, str );
-
 }
 
 MiniMidi_File * MiniMidi_File_init( char *file_path, MiniMidi_Log *l_i )
@@ -745,15 +707,41 @@ MiniMidi_File * MiniMidi_File_init( char *file_path, MiniMidi_Log *l_i )
     retval->header = _midi_header_read( buffer );
     retval->track = MiniMidi_Track_read( buffer, 14, length );
     retval->track->total_beats = (retval->track->total_ticks / retval->header->ppqn) + 1;
-    // retval->tree = MiniMidi_SegmentTree_init( retval->track->event_arr, retval->track->n_events );
     
-
     free( buffer );
 
-    // log
-    // ! HERE
-    // char log_line[ LOG_LINE_MAX_LEN ];
-    // sprintf(log_line, "MiniMidi_File : parsed %d bytes, got %d events.", freadres,  )
+    // logging
+    char log_line[ LOG_LINE_MAX_LEN ];
+    char note_name[5];
+    
+    sprintf(log_line, 
+        "MiniMidi_File : parsed %s : %d bytes, got %d events.",
+        file_path,
+        retval->track->length,
+        retval->track->n_events );
+    MiniMidi_Log_dumb_append( retval->logger, log_line );
+
+    // log header info
+    sprintf( log_line, 
+        "MiniMidi_Header: Chunk Size: %zu, PPQN: %i.",
+        retval->header->length,
+        retval->header->ppqn );
+
+    MiniMidi_Log_dumb_append( retval->logger, log_line );
+
+    for (int i = 0; i < retval->track->n_events; i++ )
+    {
+        // parse note name:
+        _midi_note_to_str( retval->track->event_arr[i].note , note_name);
+
+        sprintf( log_line, 
+            "MiniMidi_Track: Evt: %i, at (ticks=%i, note=%s)",
+            i,
+            retval->track->event_arr[i].abs_ticks,
+            note_name );
+
+        MiniMidi_Log_dumb_append( retval->logger, log_line );
+    }
 
     return retval;
 }
@@ -824,37 +812,14 @@ void _recurse_and_destroy( MiniMidi_Event_List_Node *node)
     free(node);
 }
 
-// find index of 1st evt for which ticks is greater than
-int _find_index_for_ticks_gt_eq(int ticks, MiniMidi_Event *arr, size_t arr_size)
-{
-    for (int i = 0; i < arr_size; i++)
-    {
-        if (arr[i].abs_ticks >= ticks)
-        {
-            return i;
-        }
-    }
-    return -1;
-}
-
-// find index of last evt for which ticks is lesser than
-int _find_index_for_ticks_lt_eq(int ticks, MiniMidi_Event *arr, size_t arr_size)
-{
-    for (int i = arr_size -1; i >= 0 ; i--)
-    {
-        if (arr[i].abs_ticks <= ticks)
-        {
-            return (arr_size - 1 - i);
-        }
-    }
-    return -1;
-}
-
-
-int _emptyList( MiniMidi_Event_List*self )
+int _emptyList( MiniMidi_Event_List* self )
 {
     if (self->first)
         _recurse_and_destroy(self->first);
+    
+    self->first = NULL;
+    self->last = NULL;
+    self->length = 0;
     
     return 0;
 }
@@ -874,7 +839,6 @@ int MiniMidi_get_events_in_range( MiniMidi_File *self,  MiniMidi_Event_List *lis
     _emptyList(list);
     MiniMidi_Event *evt;
 
-
     for (int i = 0; i < self->track->n_events; i++ )
     {
         evt = &(self->track->event_arr[i]);
@@ -886,9 +850,9 @@ int MiniMidi_get_events_in_range( MiniMidi_File *self,  MiniMidi_Event_List *lis
         }
     }
 
-    char log_line[128];
-    sprintf( log_line, "MiniMidi_get_events_in_range :: there are %ld events on screen.", list->length );
-    MiniMidi_Log_dumb_append( self->logger, log_line );
+    // char log_line[128];
+    // sprintf( log_line, "MiniMidi_get_events_in_range :: there are %ld events on screen.", list->length );
+    // MiniMidi_Log_dumb_append( self->logger, log_line );
 
     return 0;
 }
