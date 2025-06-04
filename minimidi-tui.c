@@ -14,8 +14,6 @@ static const int LINES_PER_SEMITONE = 2;
 
 // Grid Subcomponent
 static const int GRID_LEFT_LABELS_WIDTH = 7;
-static const int GRID_BOTT_LABELS_HEIGHT = 3;
-static const int GRID_PADDING_TOP = 2;
 
 static const int TOP_BAR_HEIGHT = 1;
 static const int TOP_RIGHT_WIDTH = 10;
@@ -103,19 +101,50 @@ int _handle_input( MiniMidi_TUI *self )
         case '-':
             if (self->cols_in_beat>1) self->cols_in_beat--;
             break;
-        case KEY_RESIZE:
-            clear();
-            // mvprintw(0, 0, "COLS = %d, LINES = %d", COLS, LINES);
-            // for (int i = 0; i < COLS; i++)
-            //     mvaddch(1, i, '*');
-            refresh();
-            break;
-
 
         default:
             break;
     }
     return 0;
+}
+/**
+ * ! COORDINATE TRANSFORMS
+ * 
+ *  beat <-> col in grid
+ *  note <-> row in grid
+ *
+ */
+int _coords__beat_2_grid_col( int start_beat, int beat, int col_per_beat, int beats_in_bar )
+{
+    int beats_till_1st_bar = beats_in_bar - start_beat % beats_in_bar;  
+    int beats_from_1st_bar = beat - beats_till_1st_bar;
+    int n_bars_b4_beat = beats_from_1st_bar / col_per_beat;
+
+    return 1 /* box */ +  n_bars_b4_beat + beat / col_per_beat;
+}
+
+int _coords__grid_col_2_beat( int start_beat, int col, int col_per_beat, int beats_in_bar )
+{
+    int beats_till_bar0 = beats_in_bar - start_beat % beats_in_bar;
+    int l_bar0 = beats_till_bar0 * col_per_beat  + 1 /* bar delim */;
+
+    int l_bar = ( 1 /* bar delim */ + col_per_beat * beats_in_bar );
+    int bars_bar1_till_barn = ( col - 1 /* box */ - l_bar0 ) / l_bar;
+
+    int l_rem = col - 1 /*box*/ - l_bar0 - bars_bar1_till_barn * l_bar;
+    int beats_rem = l_rem / col_per_beat;
+
+    return beats_till_bar0 + bars_bar1_till_barn * beats_in_bar + beats_rem;
+}
+
+int _coords__note_2_grid_row( int start_note, int note, int row_per_note, int l_y_grid )
+{
+    return l_y_grid - 2 /*box*/ - ( note - start_note ) * row_per_note;
+}
+
+int _coords__grid_row_2_note( int start_note, int row, int row_per_note, int l_y_grid )
+{
+    return start_note - ( row + 2 - l_y_grid ) / row_per_note;
 }
 
 int _update_sizes( MiniMidi_TUI *self )
@@ -123,13 +152,8 @@ int _update_sizes( MiniMidi_TUI *self )
     getmaxyx(stdscr, self->outer_size[1], self->outer_size[0]);
     getmaxyx(self->grid_derwin, self->grid_size[1], self->grid_size[0]);
 
-
-    self->logical_size[1] = self->grid_size[1] / LINES_PER_SEMITONE;
-
-    // logical size:
-    // - how many beats fit into the screen
-    int bars_in_screen = self->grid_size[0] / ( self->cols_in_beat * self->beats_in_bar +1 );
-    self->logical_size[0] = ( self->grid_size[0] - bars_in_screen ) / self->cols_in_beat;
+    self->logical_size[0] = _coords__grid_col_2_beat( self->logical_start[0], self->grid_size[0], self->cols_in_beat, self->beats_in_bar );
+    self->logical_size[1] = ( self->grid_size[1] - 2 ) / LINES_PER_SEMITONE;
 
     return 0;
 }
@@ -143,34 +167,6 @@ bool _is_in_bounds( MiniMidi_TUI *self, int beat, int note )
         && note < self->logical_start[1] + self->logical_size[1];
 }
 
-
-/**
- * ! COORDINATE TRANSFORMS
- * 
- *  beat <-> col in grid
- *  note <-> row in grid
- *
- */
-int _note_number_to_row_in_grid( MiniMidi_TUI *self, int note )
-{
-    int notes_above = self->logical_size[1] - note;
-    return self->grid_size[1] - notes_above * LINES_PER_SEMITONE + 1;
-}
-
-int _midi_note_to_row_in_grid( MiniMidi_TUI *self, MidiNote *note )
-{
-    return _note_number_to_row_in_grid( self, 12 * note->octave + (int)(note->note) );
-}
-
-
-int _beat_to_col_in_grid( MiniMidi_TUI *self, int beat )
-{
-    int beats_on_screen = (beat - self->logical_start[0]);
-    int delimiters_on_screen = beats_on_screen / self->beats_in_bar;
-
-    return GRID_LEFT_LABELS_WIDTH + 1 + beats_on_screen * self->cols_in_beat + delimiters_on_screen;
-}
-
 int _render_note_labels( MiniMidi_TUI *self )
 {
     int line_index,
@@ -180,8 +176,8 @@ int _render_note_labels( MiniMidi_TUI *self )
     
     for (int i_note = self->logical_start[1]; i_note < self->logical_start[1] + self->logical_size[1]; i_note ++ )
     {
-        line_index = _note_number_to_row_in_grid( self, i_note );
-        //GRID_PADDING_TOP + (( self->grid_size[1] - GRID_BOTT_LABELS_HEIGHT) - LINES_PER_SEMITONE * ( i_note - self->logical_start[1] ));
+        line_index = _coords__note_2_grid_row( self->logical_start[1], i_note, LINES_PER_SEMITONE, self->grid_size[1] );
+        
         assert(line_index > 0 && line_index < self->grid_size[1]);
 
         oct = i_note / 12;
@@ -228,9 +224,7 @@ int _render_grid( MiniMidi_TUI *self )
 
     for (int i_note = self->logical_start[1]; i_note < self->logical_start[1] + self->logical_size[1]; i_note ++ )
     {
-        // get a terminal line nr to draw on
-        line_index = _note_number_to_row_in_grid( self, i_note );
-        //GRID_PADDING_TOP + ((self->grid_size[1] - GRID_BOTT_LABELS_HEIGHT)- LINES_PER_SEMITONE * ( i_note - self->logical_start[1] ));
+        line_index = _coords__note_2_grid_row( self->logical_start[1], i_note, LINES_PER_SEMITONE, self->grid_size[1] );
         
         assert(line_index > 0 && line_index < self->grid_size[1]);
         aux_line_index = line_index - 1;
@@ -263,7 +257,6 @@ int _render_grid( MiniMidi_TUI *self )
         }
     }
 
-    // mvwaddch(self->grid_derwin, 10, 10, ' '|A_REVERSE);
     return 0;
 }
 
@@ -293,9 +286,9 @@ int _render_midi( MiniMidi_TUI *self )
 
         if ( _is_in_bounds( self, cursor_beat, cursor_note ) )
         {
-            beat_col = _beat_to_col_in_grid( self, cursor_beat );
-            note_line = _midi_note_to_row_in_grid( self, &(cursor->value->note) );
-            
+            note_line = _coords__note_2_grid_row( self->logical_start[1], cursor_note, LINES_PER_SEMITONE, self->grid_size[1] );
+            beat_col = _coords__beat_2_grid_col(self->logical_start[0], cursor_beat, self->cols_in_beat, self->beats_in_bar );
+    
             // draw this fucker
             if ( cursor->value->status_code == MIDI_NOTE_ON )
             {
@@ -346,18 +339,6 @@ int MiniMidi_TUI_init( MiniMidi_TUI *self, MiniMidi_File *file, MiniMidi_Log *_l
     self->logger = _logger;
   
     if ( _init_ncurses(self) ) return 1;
-
-    // log stuff
-    char log_helper[ LOG_LINE_MAX_LEN ];
-
-    // for (int i = 0; i < self->file->track->n_events; i ++)
-    // {
-    //     MiniMidi_Event_to_string_log( 
-    //         &(self->file->track->event_arr[i]),
-    //         log_helper );
-        
-    //     MiniMidi_Log_dumb_append(self->logger, log_helper);
-    // }
 
     return 0;
 }

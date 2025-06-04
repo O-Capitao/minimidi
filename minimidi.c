@@ -715,7 +715,7 @@ MiniMidi_File * MiniMidi_File_init( char *file_path, MiniMidi_Log *l_i )
     char note_name[5];
     
     sprintf(log_line, 
-        "MiniMidi_File : parsed %s : %d bytes, got %d events.",
+        "MiniMidi_File : parsed %s : %ld bytes, got %ld events.",
         file_path,
         retval->track->length,
         retval->track->n_events );
@@ -735,7 +735,7 @@ MiniMidi_File * MiniMidi_File_init( char *file_path, MiniMidi_Log *l_i )
         _midi_note_to_str( retval->track->event_arr[i].note , note_name);
 
         sprintf( log_line, 
-            "MiniMidi_Track: Evt: %i, at (ticks=%i, note=%s)",
+            "MiniMidi_Track: Evt: %i, at (ticks=%li, note=%s)",
             i,
             retval->track->event_arr[i].abs_ticks,
             note_name );
