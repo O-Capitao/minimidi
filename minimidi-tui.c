@@ -107,6 +107,9 @@ int _handle_input( MiniMidi_TUI *self )
     }
     return 0;
 }
+
+
+
 /**
  * ! COORDINATE TRANSFORMS
  * 
@@ -114,27 +117,24 @@ int _handle_input( MiniMidi_TUI *self )
  *  note <-> row in grid
  *
  */
+
+ /**
+  * How many from start of screen until 1st
+  * fully displayed bar
+  */
+int __calc_1st_bar_offset_logical( int x0, int beat_per_bar ) {
+    int rem = beat_per_bar - x0 % beat_per_bar;
+    return rem == 4 ? 0 : rem;
+}
+
 int _coords__beat_2_grid_col( int start_beat, int beat, int col_per_beat, int beats_in_bar )
 {
-    int beats_till_1st_bar = beats_in_bar - start_beat % beats_in_bar;  
-    int beats_from_1st_bar = beat - beats_till_1st_bar;
-    int n_bars_b4_beat = beats_from_1st_bar / col_per_beat;
-
-    return 1 /* box */ +  n_bars_b4_beat + beat / col_per_beat;
+    return (beat - start_beat) * col_per_beat;
 }
 
 int _coords__grid_col_2_beat( int start_beat, int col, int col_per_beat, int beats_in_bar )
 {
-    int beats_till_bar0 = beats_in_bar - start_beat % beats_in_bar;
-    int l_bar0 = beats_till_bar0 * col_per_beat  + 1 /* bar delim */;
-
-    int l_bar = ( 1 /* bar delim */ + col_per_beat * beats_in_bar );
-    int bars_bar1_till_barn = ( col - 1 /* box */ - l_bar0 ) / l_bar;
-
-    int l_rem = col - 1 /*box*/ - l_bar0 - bars_bar1_till_barn * l_bar;
-    int beats_rem = l_rem / col_per_beat;
-
-    return beats_till_bar0 + bars_bar1_till_barn * beats_in_bar + beats_rem;
+    return (col / col_per_beat) + start_beat;
 }
 
 int _coords__note_2_grid_row( int start_note, int note, int row_per_note, int l_y_grid )
@@ -159,13 +159,13 @@ int _update_sizes( MiniMidi_TUI *self )
 }
 
 
-bool _is_in_bounds( MiniMidi_TUI *self, int beat, int note )
-{
-    return beat > self->logical_start[0]
-        && beat < self->logical_start[0] + self->logical_size[0] 
-        && note > self->logical_start[1] 
-        && note < self->logical_start[1] + self->logical_size[1];
-}
+// bool _is_in_bounds( MiniMidi_TUI *self, int beat, int note )
+// {
+//     return beat > self->logical_start[0]
+//         && beat < self->logical_start[0] + self->logical_size[0] 
+//         && note > self->logical_start[1] 
+//         && note < self->logical_start[1] + self->logical_size[1];
+// }
 
 int _render_note_labels( MiniMidi_TUI *self )
 {
@@ -217,43 +217,55 @@ int _render_info( MiniMidi_TUI *self)
     return 0;
 }
 
-int _render_grid( MiniMidi_TUI *self )
-{
-    int err;
-    int line_index, aux_line_index, beat_counter;
 
-    for (int i_note = self->logical_start[1]; i_note < self->logical_start[1] + self->logical_size[1]; i_note ++ )
-    {
+
+int _render_grid( MiniMidi_TUI *self ){
+
+    int err;
+    int line_index, aux_line_index, beat_counter, bar_counter;
+    bool delim_draw_armed = false;
+    // bool dash_on = false;
+    bool is_new_beat = false;
+    bool is_new_bar = false;
+    int col_offset = GRID_LEFT_LABELS_WIDTH + 1;
+    int col_in_grid = col_offset;
+
+    for (int i_note = self->logical_start[1]; i_note < self->logical_start[1] + self->logical_size[1]; i_note ++ ){
+
         line_index = _coords__note_2_grid_row( self->logical_start[1], i_note, LINES_PER_SEMITONE, self->grid_size[1] );
         
         assert(line_index > 0 && line_index < self->grid_size[1]);
-        aux_line_index = line_index - 1;
-        beat_counter = self->logical_start[0];
+        
+        aux_line_index = line_index - 1;        // where bar delimiters are drawed into
+        beat_counter = self->logical_start[0];  // keep track of actual beats, not just cols
+        bar_counter = 0;
+        
 
         // cycle through drawable cols
-        for (int j = GRID_LEFT_LABELS_WIDTH + 1; j < self->grid_size[0] - 1; j ++ )  /* the 1s account for box */
-        {
+        for (int j = col_offset; j < self->grid_size[0] - 1 /* box */; j ++ ){
 
-            // draw note lines (horizontal grid)
-            if (j % 2 == 0)
-            {
+            // dash under even beats
+            if ( beat_counter % 2 == 0 ){
                 if ( (err = mvwaddch( self->grid_derwin, line_index, j, note_delim )) )
                     return 1;
             }
 
+            col_in_grid = j - col_offset;
+            
+            // beat is incremented every cols_in_beat
+            is_new_beat = col_in_grid != 0 && ( (col_in_grid + 1) % self->cols_in_beat ) == 0;
+            
+            if (is_new_beat) {
+                beat_counter++;
 
-            // draw beat / bar delims
-            if ( j % self->cols_in_beat == 0 )
-            {
-                beat_counter ++;
-
-                if (beat_counter % ( self->beats_in_bar + 1) == 0) /** + 1 for the vertical delimiter which uses 1 col  */
-                {
+                if ( beat_counter % self->beats_in_bar == 0) {
+                
+                    bar_counter++;
+                
                     if ( (err = mvwaddch( self->grid_derwin, aux_line_index, j, bar_delim )) )
                         return 1;
                 }
-            }
-            
+            }  
         }
     }
 
@@ -284,23 +296,21 @@ int _render_midi( MiniMidi_TUI *self )
         cursor_beat = cursor->value->abs_ticks / self->file->header->ppqn;
         cursor_note = ( cursor->value->note.octave * 12 ) + (int)( cursor->value->note.note );
 
-        if ( _is_in_bounds( self, cursor_beat, cursor_note ) )
+        note_line = _coords__note_2_grid_row( self->logical_start[1], cursor_note, LINES_PER_SEMITONE, self->grid_size[1] );
+        beat_col = GRID_LEFT_LABELS_WIDTH + 1 + _coords__beat_2_grid_col( self->logical_start[0], cursor_beat, self->cols_in_beat, self->beats_in_bar );
+
+        // draw this fucker
+        if ( cursor->value->status_code == MIDI_NOTE_ON )
         {
-            note_line = _coords__note_2_grid_row( self->logical_start[1], cursor_note, LINES_PER_SEMITONE, self->grid_size[1] );
-            beat_col = _coords__beat_2_grid_col(self->logical_start[0], cursor_beat, self->cols_in_beat, self->beats_in_bar );
-    
-            // draw this fucker
-            if ( cursor->value->status_code == MIDI_NOTE_ON )
-            {
 
-                // MiniMidi_Log_dumb_append( self->logger, MiniMidi_Log_format_string_static("Writing evt: beat:%d, note:%d", beat_col, note_line));
-                mvwaddch( self->grid_derwin, note_line, beat_col, 'x' |A_REVERSE);
+            // MiniMidi_Log_dumb_append( self->logger, MiniMidi_Log_format_string_static("Writing evt: beat:%d, note:%d", beat_col, note_line));
+            mvwaddch( self->grid_derwin, note_line, beat_col, 'x' ); // |A_REVERSE);
 
-            } else if ( cursor->value->status_code == MIDI_NOTE_OFF )
-            {
+        } else if ( cursor->value->status_code == MIDI_NOTE_OFF )
+        {
 
-            }
         }
+        // }
 
         cursor = cursor->next;
     }

@@ -619,6 +619,7 @@ void _midi_status_code_to_str( MidiStatusCode status, char* str )
     }
 }
 
+
 void MiniMidi_Event_to_string_log( MiniMidi_Event *me, char *str )
 {
     char aux_str[16]; // for status code translation
@@ -757,6 +758,35 @@ MiniMidi_Event_List *MiniMidi_Event_LList_init()
     return self;
 }
 
+
+// Kenny Loggings
+void __dump_list_to_log(MiniMidi_File *f, MiniMidi_Event_List *l) {
+
+    char line[256];
+    int e_counter = 0;
+
+    sprintf(line, "\n\nDumping contents of MiniMidi_Event_List.");
+    MiniMidi_Log_dumb_append(f->logger, line);
+    
+    MiniMidi_Event_List_Node *cursor = l->first;
+
+    while (cursor) {
+
+        sprintf(line, "At index %i, beat = %li:", e_counter, cursor->value->abs_ticks/f->header->ppqn);
+        MiniMidi_Log_dumb_append(f->logger, line);
+
+        MiniMidi_Event_to_string_log( cursor->value, line );
+        MiniMidi_Log_dumb_append(f->logger, line);
+
+        cursor = cursor->next;
+        e_counter++;
+    }
+
+    sprintf(line, "Done dumping %i events.\n\n", e_counter );
+    MiniMidi_Log_dumb_append(f->logger, line);
+}
+
+
 int MiniMidi_Event_List_append(MiniMidi_Event_List*self, MiniMidi_Event *v)
 {
     MiniMidi_Event_List_Node *node = (MiniMidi_Event_List_Node *)malloc(sizeof( MiniMidi_Event_List_Node ));
@@ -787,21 +817,21 @@ int MiniMidi_Event_List_append(MiniMidi_Event_List*self, MiniMidi_Event *v)
     return 0;
 }
 
-void _print_list( MiniMidi_Event_List*self )
-{
-    MiniMidi_Event_List_Node *n = self->first;
-    int i = 0;
-    printf("Printing list with %li items.\n", self->length);
+// void _print_list( MiniMidi_Event_List*self )
+// {
+//     MiniMidi_Event_List_Node *n = self->first;
+//     int i = 0;
+//     printf("Printing list with %li items.\n", self->length);
 
-    if (!self->length) return;
+//     if (!self->length) return;
 
-    while ( n )
-    {
-        printf("\n\nNode %d: at %li ticks\n", i++, n->next->value->abs_ticks);
-        _print_midi_note( n->value->note );
-        n = n->next;
-    }
-}
+//     while ( n )
+//     {
+//         printf("\n\nNode %d: at %li ticks\n", i++, n->next->value->abs_ticks);
+//         _print_midi_note( n->value->note );
+//         n = n->next;
+//     }
+// }
 
 void _recurse_and_destroy( MiniMidi_Event_List_Node *node)
 {
@@ -849,6 +879,8 @@ int MiniMidi_get_events_in_range( MiniMidi_File *self,  MiniMidi_Event_List *lis
             MiniMidi_Event_List_append(list, evt);
         }
     }
+
+    __dump_list_to_log( self, list); 
 
     // char log_line[128];
     // sprintf( log_line, "MiniMidi_get_events_in_range :: there are %ld events on screen.", list->length );
