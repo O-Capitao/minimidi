@@ -21,16 +21,109 @@ static const int BOTT_BAR_HEIGHT = 1;
 
 // Graphical elements:
 static const chtype note_delim = '_';
-static const chtype bar_delim = ':';
+static const chtype bar_delim = '\'';
 
 /**
  * PRIVATE
  */
+enum COLOR_PAIRS {
+    RED_ON_BLK = 1,
+    GREEN_ON_BLK = 2,
+    BLACK_ON_CYAN = 3,
+    BLACK_ON_GREEN = 4
+};
+/**
+ * ! COORDINATE TRANSFORMS
+ * 
+ *  beat <-> col in grid
+ *  note <-> row in grid
+ *
+ */
+
+ /**
+  * How many from start of screen until 1st
+  * fully displayed bar
+  */
+int __calc_1st_bar_offset_logical( int x0, int beat_per_bar ) {
+    int rem = beat_per_bar - x0 % beat_per_bar;
+    return rem == 4 ? 0 : rem;
+}
+
+int _coords__beat_2_grid_col( int start_beat, int beat, int col_per_beat, int beats_in_bar )
+{
+    return (beat - start_beat) * col_per_beat;
+}
+
+int _coords__grid_col_2_beat( int start_beat, int col, int col_per_beat, int beats_in_bar )
+{
+    return (col / col_per_beat) + start_beat;
+}
+
+int _coords__note_2_grid_row( int start_note, int note, int row_per_note, int l_y_grid )
+{
+    return l_y_grid - 2 /*box*/ - ( note - start_note ) * row_per_note;
+}
+
+int _coords__grid_row_2_note( int start_note, int row, int row_per_note, int l_y_grid )
+{
+    return start_note - ( row + 2 - l_y_grid ) / row_per_note;
+}
+
+int _update_sizes( MiniMidi_TUI *self )
+{
+    getmaxyx(stdscr, self->outer_size[1], self->outer_size[0]);
+    getmaxyx(self->grid_derwin, self->grid_size[1], self->grid_size[0]);
+
+    self->logical_size[0] = _coords__grid_col_2_beat( self->logical_start[0], self->grid_size[0], self->cols_in_beat, self->beats_in_bar );
+    self->logical_size[1] = ( self->grid_size[1] - 2 ) / LINES_PER_SEMITONE;
+
+    return 0;
+}
+/**
+* When app starts:
+* snap window to show events instead of (C0, 1st beat) corner
+*/
+int _snap_to_first_events( MiniMidi_TUI *self )
+{
+    // find 1st NOTE_ON evt
+    MiniMidi_Event *e;
+    // bool found = false;
+    int ind = 0;
+
+    while (ind < self->file->track->n_events ) {
+
+        e = &(self->file->track->event_arr[ind++]);
+
+        // find first NOTE_ON since 1st event
+        // might be something else?
+        if (e->status_code == MIDI_NOTE_ON) {
+            break;
+        }
+    }
+
+    self->logical_start[0] = e->abs_ticks / self->file->header->ppqn;
+    
+    int note_int = ( e->note.octave * 12 ) + (int)( e->note.note );
+    
+    self->logical_start[1] = ( note_int > self->logical_size[1] / 2 ) ?
+        note_int - self->logical_size[1] / 2
+        : 0;
+
+    return 0;
+}
+
 int _init_ncurses( MiniMidi_TUI *self )
 {
     // Start UI
 	initscr();			        /* Start curses mode 		*/
 	
+    // Check if terminal supports color
+    if (!has_colors()) {
+        endwin();
+        printf("Your terminal does not support color\n");
+        return 1;
+    }
+
     // check window initialization
     if (!stdscr) return 1;
     
@@ -38,6 +131,16 @@ int _init_ncurses( MiniMidi_TUI *self )
 	keypad(stdscr, TRUE);		/* We get F1, F2 etc..		*/
 	noecho();			        /* Don't echo() while we do getch */
     curs_set(0);                /* Hide Cursor*/
+    
+    start_color();
+    use_default_colors();  // Use terminal theme colors
+
+        // Define color pairs (pair_number, foreground, background)
+    init_pair( RED_ON_BLK,    COLOR_RED,   COLOR_WHITE );
+    init_pair( GREEN_ON_BLK,  COLOR_GREEN, COLOR_BLACK );
+    init_pair( BLACK_ON_CYAN, COLOR_BLACK, COLOR_CYAN );
+    init_pair( BLACK_ON_GREEN, COLOR_BLACK, COLOR_GREEN );
+
 
     getmaxyx(stdscr, self->outer_size[1], self->outer_size[0]);
 
@@ -49,6 +152,9 @@ int _init_ncurses( MiniMidi_TUI *self )
 
     getmaxyx( self->grid_derwin, self->grid_size[1], self->grid_size[0]);
     assert(self->outer_size[0] == self->grid_size[0]);
+    
+    _update_sizes( self );
+    _snap_to_first_events( self );
 
     return 0;
 }
@@ -108,65 +214,6 @@ int _handle_input( MiniMidi_TUI *self )
     return 0;
 }
 
-
-
-/**
- * ! COORDINATE TRANSFORMS
- * 
- *  beat <-> col in grid
- *  note <-> row in grid
- *
- */
-
- /**
-  * How many from start of screen until 1st
-  * fully displayed bar
-  */
-int __calc_1st_bar_offset_logical( int x0, int beat_per_bar ) {
-    int rem = beat_per_bar - x0 % beat_per_bar;
-    return rem == 4 ? 0 : rem;
-}
-
-int _coords__beat_2_grid_col( int start_beat, int beat, int col_per_beat, int beats_in_bar )
-{
-    return (beat - start_beat) * col_per_beat;
-}
-
-int _coords__grid_col_2_beat( int start_beat, int col, int col_per_beat, int beats_in_bar )
-{
-    return (col / col_per_beat) + start_beat;
-}
-
-int _coords__note_2_grid_row( int start_note, int note, int row_per_note, int l_y_grid )
-{
-    return l_y_grid - 2 /*box*/ - ( note - start_note ) * row_per_note;
-}
-
-int _coords__grid_row_2_note( int start_note, int row, int row_per_note, int l_y_grid )
-{
-    return start_note - ( row + 2 - l_y_grid ) / row_per_note;
-}
-
-int _update_sizes( MiniMidi_TUI *self )
-{
-    getmaxyx(stdscr, self->outer_size[1], self->outer_size[0]);
-    getmaxyx(self->grid_derwin, self->grid_size[1], self->grid_size[0]);
-
-    self->logical_size[0] = _coords__grid_col_2_beat( self->logical_start[0], self->grid_size[0], self->cols_in_beat, self->beats_in_bar );
-    self->logical_size[1] = ( self->grid_size[1] - 2 ) / LINES_PER_SEMITONE;
-
-    return 0;
-}
-
-
-// bool _is_in_bounds( MiniMidi_TUI *self, int beat, int note )
-// {
-//     return beat > self->logical_start[0]
-//         && beat < self->logical_start[0] + self->logical_size[0] 
-//         && note > self->logical_start[1] 
-//         && note < self->logical_start[1] + self->logical_size[1];
-// }
-
 int _render_note_labels( MiniMidi_TUI *self )
 {
     int line_index,
@@ -223,12 +270,11 @@ int _render_grid( MiniMidi_TUI *self ){
 
     int err;
     int line_index, aux_line_index, beat_counter, bar_counter;
-    bool delim_draw_armed = false;
-    // bool dash_on = false;
     bool is_new_beat = false;
-    bool is_new_bar = false;
     int col_offset = GRID_LEFT_LABELS_WIDTH + 1;
     int col_in_grid = col_offset;
+    char bar_number_srt[10];
+    int bar_offset = self->logical_start[0] / self->beats_in_bar;
 
     for (int i_note = self->logical_start[1]; i_note < self->logical_start[1] + self->logical_size[1]; i_note ++ ){
 
@@ -264,6 +310,17 @@ int _render_grid( MiniMidi_TUI *self ){
                 
                     if ( (err = mvwaddch( self->grid_derwin, aux_line_index, j, bar_delim )) )
                         return 1;
+
+                    // annotate the bar num for the 1st line only
+                    if (i_note == (self->logical_start[1] + self->logical_size[1] - 1) 
+                        && j < self->grid_size[0] - 10
+                    ){
+                        
+                        wattron( self->grid_derwin, COLOR_PAIR(2));
+                        snprintf( bar_number_srt, 10, "BAR%i", bar_offset + bar_counter );
+                        mvwprintw(self->grid_derwin, aux_line_index, j + 1, bar_number_srt);
+                        wattroff( self->grid_derwin, COLOR_PAIR(2));
+                    }
                 }
             }  
         }
