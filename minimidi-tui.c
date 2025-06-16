@@ -139,7 +139,7 @@ int _init_ncurses( MiniMidi_TUI *self )
     init_pair( RED_ON_BLK,    COLOR_RED,   COLOR_WHITE );
     init_pair( GREEN_ON_BLK,  COLOR_GREEN, COLOR_BLACK );
     init_pair( BLACK_ON_CYAN, COLOR_BLACK, COLOR_CYAN );
-    init_pair( BLACK_ON_GREEN, COLOR_BLACK, COLOR_GREEN );
+    init_pair( BLACK_ON_GREEN, COLOR_BLACK, COLOR_MAGENTA );
 
 
     getmaxyx(stdscr, self->outer_size[1], self->outer_size[0]);
@@ -308,7 +308,7 @@ int _render_grid( MiniMidi_TUI *self ){
                 
                     bar_counter++;
                 
-                    if ( (err = mvwaddch( self->grid_derwin, aux_line_index, j, bar_delim )) )
+                    if ( (err = mvwaddch( self->grid_derwin, aux_line_index, j + 1, bar_delim )) )
                         return 1;
 
                     // annotate the bar num for the 1st line only
@@ -318,7 +318,7 @@ int _render_grid( MiniMidi_TUI *self ){
                         
                         wattron( self->grid_derwin, COLOR_PAIR(2));
                         snprintf( bar_number_srt, 10, "BAR%i", bar_offset + bar_counter );
-                        mvwprintw(self->grid_derwin, aux_line_index, j + 1, bar_number_srt);
+                        mvwprintw(self->grid_derwin, aux_line_index, j + 2, bar_number_srt);
                         wattroff( self->grid_derwin, COLOR_PAIR(2));
                     }
                 }
@@ -332,8 +332,17 @@ int _render_grid( MiniMidi_TUI *self ){
 
 int _render_midi( MiniMidi_TUI *self )
 {
+    static int rendered_ONs[2][100];
+    int rendered_ONs_ctr = 0;
 
-    MiniMidi_Event_List_Node *cursor;
+    for (int i = 0; i < 2; i++){
+        for (int j = 0; j < 2; j++){
+            rendered_ONs[i][j] = 0;
+        }
+    }
+
+
+    MiniMidi_Event_List_Node *cursor, *aux;
 
     MiniMidi_get_events_in_range(
         self->file,
@@ -346,7 +355,7 @@ int _render_midi( MiniMidi_TUI *self )
 
 
     cursor = self->midi_events_list->first;
-    int cursor_beat, cursor_note, beat_col, note_line;
+    int cursor_beat, cursor_note, beat_col, note_line, cursor_beat_aux, beat_col_aux;
 
     while (cursor)
     {
@@ -359,15 +368,42 @@ int _render_midi( MiniMidi_TUI *self )
         // draw this fucker
         if ( cursor->value->status_code == MIDI_NOTE_ON )
         {
+            rendered_ONs[0][rendered_ONs_ctr] = beat_col;
+            rendered_ONs[1][rendered_ONs_ctr] = note_line;
+            rendered_ONs_ctr ++;
 
-            // MiniMidi_Log_dumb_append( self->logger, MiniMidi_Log_format_string_static("Writing evt: beat:%d, note:%d", beat_col, note_line));
-            mvwaddch( self->grid_derwin, note_line, beat_col, 'x' ); // |A_REVERSE);
+            // paint leading edge of event
+            wattron( self->grid_derwin,  COLOR_PAIR (BLACK_ON_CYAN )); // wattron( self->grid_derwin, COLOR_PAIR(2));
+            mvwaddch( self->grid_derwin, note_line, beat_col, ' ' ); // |A_REVERSE);
+            wattroff( self->grid_derwin,  COLOR_PAIR (BLACK_ON_CYAN ));
+
+            // paint remaining until corresponding note_off
+            aux = (cursor->value)->next;
+
+            if (aux == NULL){
+
+            }
+
+            cursor_beat_aux = aux->value->abs_ticks / self->file->header->ppqn + 1;
+
+            // check if next is in bounds:
+            if (cursor_beat_aux < self->logical_start[0] + self->logical_size[0]){
+                beat_col_aux = GRID_LEFT_LABELS_WIDTH + 1 + _coords__beat_2_grid_col( self->logical_start[0], cursor_beat_aux, self->cols_in_beat, self->beats_in_bar );
+            } else {
+                beat_col_aux = self->grid_size[0];
+            }
+
+            // paint from beat_col + 1 until beat_col_aux
+            wattron( self->grid_derwin, COLOR_PAIR(BLACK_ON_GREEN));
+            for (int b = beat_col + 1; b < beat_col_aux; b++) {
+                mvwaddch( self->grid_derwin, note_line, b, ' ' );
+            }
+            wattroff( self->grid_derwin, COLOR_PAIR(BLACK_ON_GREEN ));
 
         } else if ( cursor->value->status_code == MIDI_NOTE_OFF )
         {
 
         }
-        // }
 
         cursor = cursor->next;
     }
@@ -396,7 +432,7 @@ int MiniMidi_TUI_init( MiniMidi_TUI *self, MiniMidi_File *file, MiniMidi_Log *_l
     self->outer_size[1] = 0;
     
     // ZOOM ETERNAL
-    self->cols_in_beat = 3;
+    self->cols_in_beat = 4;
 
     // TIME SIG
     self->beats_in_bar = 4;
