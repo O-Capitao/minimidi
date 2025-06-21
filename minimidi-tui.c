@@ -394,7 +394,7 @@ int _render_midi( MiniMidi_TUI *self )
 
             }
 
-            cursor_beat_aux = aux->abs_ticks / self->file->header->ppqn + 1;
+            cursor_beat_aux = aux->abs_ticks / self->file->header->ppqn;
 
             // check if next is in bounds:
             if (cursor_beat_aux < self->logical_start[0] + self->logical_size[0]){
