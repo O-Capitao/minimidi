@@ -100,12 +100,11 @@ typedef struct MiniMidi_File
     MiniMidi_Header      *header;
     MiniMidi_Track       *track;
     size_t               length;
-    MiniMidi_Log         *logger;
 
 } MiniMidi_File;
 
-MiniMidi_File       *MiniMidi_File_init( char *file_path, MiniMidi_Log *logger_inst );
-void                MiniMidi_File_print( MiniMidi_File *file );
+MiniMidi_File       *MiniMidi_File_init( char *file_path );
+// void                MiniMidi_File_print( MiniMidi_File *file );
 void                MiniMidi_File_free( MiniMidi_File *file );
 
 
@@ -134,6 +133,6 @@ typedef struct MiniMidi_Event_List
 MiniMidi_Event_List      *MiniMidi_Event_LList_init();
 
 int MiniMidi_get_events_in_range( MiniMidi_File *self, MiniMidi_Event_List *list, int start_ticks, int end_ticks, int start_note, int end_note );
-void MiniMidi_Event_to_string_log( MiniMidi_Event *me, char *str );
+// void MiniMidi_Event_to_string_log( MiniMidi_Event *me, char *str );
 
 #endif /* MINIMIDI_H */

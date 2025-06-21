@@ -38,6 +38,11 @@ int main( int argc, char *argv[] )
     
     // Check tmux
     char *tmux = getenv("TMUX");
+    
+    // init logger
+    MiniMidi_Log_init();
+    sprintf( MiniMidi_Log_log_line, "main: initting." );
+    MiniMidi_Log_writeline();
 
     if (tmux)
     {
@@ -57,18 +62,20 @@ int main( int argc, char *argv[] )
         }
     }
 
-    // init logger
-    MiniMidi_Log *logger = MiniMidi_Log_init();
+
 
     // Read the file passed in by arg
-    MiniMidi_File *midi_file = MiniMidi_File_init( argv[1] , logger );
+    MiniMidi_File *midi_file = MiniMidi_File_init( argv[1] );
+
+
+    
     if (midi_file == NULL) {
         printf(RED "ERROR" RESET " Failed to read MIDI file: %s\n", argv[1]);
         return 1;
     }
 
     MiniMidi_TUI *ui = (MiniMidi_TUI*)malloc( sizeof( MiniMidi_TUI ) );
-    MiniMidi_TUI_init(ui, midi_file, logger);
+    MiniMidi_TUI_init(ui, midi_file );
 
     int ERRSTATUS = 0;
 
@@ -79,7 +86,8 @@ int main( int argc, char *argv[] )
     }
 
     quit(ui, midi_file, ERRSTATUS ? true: false);
-    MiniMidi_Log_free( logger );
+    
+    MiniMidi_Log_free();
 
     return 0;
 }

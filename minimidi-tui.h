@@ -37,9 +37,6 @@ typedef struct MiniMidi_TUI
     // derwin pointer -> Grid Area
     WINDOW *grid_derwin;
 
-    MiniMidi_Log *logger;
-    
-
 } MiniMidi_TUI;
 
 /***
@@ -47,7 +44,7 @@ typedef struct MiniMidi_TUI
  */
 
 // init all ncurses, sizes, load file, context
-int MiniMidi_TUI_init( MiniMidi_TUI *self, MiniMidi_File *file, MiniMidi_Log *logger);
+int MiniMidi_TUI_init( MiniMidi_TUI *self, MiniMidi_File *file );
 
 // act upon result of user intput
 //  returns:

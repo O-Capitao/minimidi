@@ -269,7 +269,6 @@ size_t _read_VLQ_delta_t( _Byte *bytes, size_t len, uint64_t *val_ptr)
     size_t _index = 0;
     _Byte _curr_byte;
 
-
 #if DEBUG
 /* DEBUG IT */ printf(TAB TAB "processing VLQ :: ");
 #endif
@@ -454,24 +453,37 @@ MiniMidi_File* create_mini_midi_file(const char *filepath) {
 
 int hook_up_events( MiniMidi_Event *arr, size_t n )
 {
+    sprintf( MiniMidi_Log_log_line, "minimidi.c > hook_up_events() : Entering" );
+    MiniMidi_Log_writeline();
+
+
+
     int hook_counter = 0;
     MiniMidi_Event *cursor, *cursor2;
 
     for (int i = 0; i < n; i++)
     {
+
         cursor = &(arr[i]);
         
+        // snprintf(log_line, 100, "hook_up_events:: connecting %li", i);
+
         if (cursor->status_code == MIDI_NOTE_ON)
-        {
+        {            
             // odds are that a NOTE OFF exists for this note
             for (int j = i; j < n; j++)
             {
                 cursor2 = &(arr[j]);
                 if ( cursor2->status_code == MIDI_NOTE_OFF && _compare_MidiNote( &(cursor->note), &(cursor2->note) ))
                 {
+                    sprintf( MiniMidi_Log_log_line, "minimidi.c > hook_up_events() > hooking up %i to %i ", i, j );
+                    MiniMidi_Log_writeline();
+                    
                     hook_counter++;
                     cursor->next = cursor2;
                     cursor2->prev = cursor;
+
+                    break;
                 }
             }
         }
@@ -600,8 +612,6 @@ void _midi_note_to_str(MidiNote note, char *str)
             sprintf(str, "XX");
             break;
     }
-
-    printf(" Oct: %hu ", note.octave );
 }
 
 void _midi_status_code_to_str( MidiStatusCode status, char* str )
@@ -620,7 +630,7 @@ void _midi_status_code_to_str( MidiStatusCode status, char* str )
 }
 
 
-void MiniMidi_Event_to_string_log( MiniMidi_Event *me, char *str )
+void MiniMidi_Event_to_string_log( int index, MiniMidi_Event *me, char *str )
 {
     char aux_str[16]; // for status code translation
     char note_str[8];
@@ -628,7 +638,7 @@ void MiniMidi_Event_to_string_log( MiniMidi_Event *me, char *str )
     _midi_note_to_str(me->note, note_str);
     _midi_status_code_to_str(me->status_code, aux_str);
 
-    sprintf( str, "EVT: ticks=%ld, note=%s, status=%s", me->abs_ticks, note_str, aux_str );
+    sprintf( str, "EVT [%i]: ticks=%ld, note=%s, status=%s", index, me->abs_ticks, note_str, aux_str );
 
 }
 
@@ -672,7 +682,7 @@ void MiniMidi_File_print( MiniMidi_File *file )
     MiniMidi_Track_print( file->track );
 }
 
-MiniMidi_File * MiniMidi_File_init( char *file_path, MiniMidi_Log *l_i )
+MiniMidi_File * MiniMidi_File_init( char *file_path )
 {
     MiniMidi_File *retval = create_mini_midi_file( file_path );
     
@@ -682,7 +692,7 @@ MiniMidi_File * MiniMidi_File_init( char *file_path, MiniMidi_Log *l_i )
     fileptr = fopen( file_path, "rb" );
     _Byte * buffer = 0;
     size_t length;
-    retval->logger = l_i;
+    // retval->logger = l_i;
 
     int freadres = 0;
     
@@ -712,36 +722,36 @@ MiniMidi_File * MiniMidi_File_init( char *file_path, MiniMidi_Log *l_i )
     free( buffer );
 
     // logging
-    char log_line[ LOG_LINE_MAX_LEN ];
     char note_name[5];
     
-    sprintf(log_line, 
+    sprintf( MiniMidi_Log_log_line, 
         "MiniMidi_File : parsed %s : %ld bytes, got %ld events.",
         file_path,
         retval->track->length,
         retval->track->n_events );
-    MiniMidi_Log_dumb_append( retval->logger, log_line );
+
+    MiniMidi_Log_writeline();
 
     // log header info
-    sprintf( log_line, 
+    sprintf( MiniMidi_Log_log_line,
         "MiniMidi_Header: Chunk Size: %zu, PPQN: %i.",
         retval->header->length,
         retval->header->ppqn );
 
-    MiniMidi_Log_dumb_append( retval->logger, log_line );
+    MiniMidi_Log_writeline();
 
     for (int i = 0; i < retval->track->n_events; i++ )
     {
         // parse note name:
         _midi_note_to_str( retval->track->event_arr[i].note , note_name);
 
-        sprintf( log_line, 
+        sprintf( MiniMidi_Log_log_line, 
             "MiniMidi_Track: Evt: %i, at (ticks=%li, note=%s)",
             i,
             retval->track->event_arr[i].abs_ticks,
             note_name );
 
-        MiniMidi_Log_dumb_append( retval->logger, log_line );
+        MiniMidi_Log_writeline();
     }
 
     return retval;
@@ -762,28 +772,27 @@ MiniMidi_Event_List *MiniMidi_Event_LList_init()
 // Kenny Loggings
 void __dump_list_to_log(MiniMidi_File *f, MiniMidi_Event_List *l) {
 
-    char line[256];
     int e_counter = 0;
 
-    sprintf(line, "\n\nDumping contents of MiniMidi_Event_List.");
-    MiniMidi_Log_dumb_append(f->logger, line);
+    // sprintf( MiniMidi_Log_log_line, "------------ Dumping contents of MiniMidi_Event_List.");
+    // MiniMidi_Log_writeline();
     
     MiniMidi_Event_List_Node *cursor = l->first;
 
     while (cursor) {
 
-        sprintf(line, "At index %i, beat = %li:", e_counter, cursor->value->abs_ticks/f->header->ppqn);
-        MiniMidi_Log_dumb_append(f->logger, line);
+        // sprintf( MiniMidi_Log_log_line, "At index %i, beat = %li:", e_counter, cursor->value->abs_ticks/f->header->ppqn);
+        // MiniMidi_Log_writeline();
 
-        MiniMidi_Event_to_string_log( cursor->value, line );
-        MiniMidi_Log_dumb_append(f->logger, line);
+        MiniMidi_Event_to_string_log( e_counter, cursor->value, MiniMidi_Log_log_line );
+        MiniMidi_Log_writeline();
 
         cursor = cursor->next;
         e_counter++;
     }
 
-    sprintf(line, "Done dumping %i events.\n\n", e_counter );
-    MiniMidi_Log_dumb_append(f->logger, line);
+    sprintf( MiniMidi_Log_log_line, "minimidi.c > MiniMidi_Event_List > init : Done initing with %i events.", e_counter );
+    MiniMidi_Log_writeline();
 }
 
 
@@ -816,22 +825,6 @@ int MiniMidi_Event_List_append(MiniMidi_Event_List*self, MiniMidi_Event *v)
 
     return 0;
 }
-
-// void _print_list( MiniMidi_Event_List*self )
-// {
-//     MiniMidi_Event_List_Node *n = self->first;
-//     int i = 0;
-//     printf("Printing list with %li items.\n", self->length);
-
-//     if (!self->length) return;
-
-//     while ( n )
-//     {
-//         printf("\n\nNode %d: at %li ticks\n", i++, n->next->value->abs_ticks);
-//         _print_midi_note( n->value->note );
-//         n = n->next;
-//     }
-// }
 
 void _recurse_and_destroy( MiniMidi_Event_List_Node *node)
 {
@@ -881,10 +874,6 @@ int MiniMidi_get_events_in_range( MiniMidi_File *self,  MiniMidi_Event_List *lis
     }
 
     __dump_list_to_log( self, list); 
-
-    // char log_line[128];
-    // sprintf( log_line, "MiniMidi_get_events_in_range :: there are %ld events on screen.", list->length );
-    // MiniMidi_Log_dumb_append( self->logger, log_line );
-
+    
     return 0;
 }

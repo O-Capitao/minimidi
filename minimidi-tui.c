@@ -268,6 +268,9 @@ int _render_info( MiniMidi_TUI *self)
 
 int _render_grid( MiniMidi_TUI *self ){
 
+    sprintf( MiniMidi_Log_log_line, "minimidi-tui.c > _render_grid() : Entering" );
+    MiniMidi_Log_writeline();
+    
     int err;
     int line_index, aux_line_index, beat_counter, bar_counter;
     bool is_new_beat = false;
@@ -332,6 +335,10 @@ int _render_grid( MiniMidi_TUI *self ){
 
 int _render_midi( MiniMidi_TUI *self )
 {
+
+    sprintf( MiniMidi_Log_log_line, "minimidi-tui.c > _render_midi() : Entering" );
+    MiniMidi_Log_writeline();
+
     static int rendered_ONs[2][100];
     int rendered_ONs_ctr = 0;
 
@@ -342,7 +349,8 @@ int _render_midi( MiniMidi_TUI *self )
     }
 
 
-    MiniMidi_Event_List_Node *cursor, *aux;
+    MiniMidi_Event_List_Node *cursor;
+    MiniMidi_Event *aux;
 
     MiniMidi_get_events_in_range(
         self->file,
@@ -377,14 +385,16 @@ int _render_midi( MiniMidi_TUI *self )
             mvwaddch( self->grid_derwin, note_line, beat_col, ' ' ); // |A_REVERSE);
             wattroff( self->grid_derwin,  COLOR_PAIR (BLACK_ON_CYAN ));
 
-            // paint remaining until corresponding note_off
+            // TODO:
+            // -> This logic...
+            // // paint remaining until corresponding note_off
             aux = (cursor->value)->next;
 
             if (aux == NULL){
 
             }
 
-            cursor_beat_aux = aux->value->abs_ticks / self->file->header->ppqn + 1;
+            cursor_beat_aux = aux->abs_ticks / self->file->header->ppqn + 1;
 
             // check if next is in bounds:
             if (cursor_beat_aux < self->logical_start[0] + self->logical_size[0]){
@@ -414,7 +424,7 @@ int _render_midi( MiniMidi_TUI *self )
 /**
  * PUBLIC
  */
-int MiniMidi_TUI_init( MiniMidi_TUI *self, MiniMidi_File *file, MiniMidi_Log *_logger )
+int MiniMidi_TUI_init( MiniMidi_TUI *self, MiniMidi_File *file )
 {
     self->is_dirty = false;
     self->is_running = true;
@@ -439,7 +449,6 @@ int MiniMidi_TUI_init( MiniMidi_TUI *self, MiniMidi_File *file, MiniMidi_Log *_l
     //
     self->file = file;
     self->midi_events_list = MiniMidi_Event_LList_init();
-    self->logger = _logger;
   
     if ( _init_ncurses(self) ) return 1;
 

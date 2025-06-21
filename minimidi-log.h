@@ -4,25 +4,12 @@
 #include <stdio.h>
 #include <stdint.h>
 
+#define LOG_LINE_MAX_LEN 512
 
-#define BUFFER_SIZE 1024
-#define LOG_LINE_MAX_LEN 128
+extern char MiniMidi_Log_log_line[ LOG_LINE_MAX_LEN ];
 
-typedef struct MiniMidi_Log
-{
-    char buffer[ BUFFER_SIZE ];
-    size_t buffer_end;
-
-    FILE *file;
-
-} MiniMidi_Log;
-
-MiniMidi_Log *MiniMidi_Log_init();
-int MiniMidi_Log_append( MiniMidi_Log *self, char *text);
-int MiniMidi_Log_dumb_append( MiniMidi_Log *self, char *text);
-int MiniMidi_Log_flush( MiniMidi_Log *self );
-int MiniMidi_Log_free( MiniMidi_Log *self );
-
-char* MiniMidi_Log_format_string_static(const char *format, ...);
+int MiniMidi_Log_init();
+int MiniMidi_Log_writeline();
+int MiniMidi_Log_free();
 
 #endif /* MINIMIDI_LOG_H */
