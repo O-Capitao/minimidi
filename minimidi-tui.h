@@ -18,7 +18,7 @@
 */
 typedef struct MiniMidi_TUI
 {
-    int cols_in_beat,
+    int ticks_per_col,          //    cols_in_beat,
         beats_in_bar,
         logical_size[2],    // a pair { n_beats, n_semitones }
         logical_start[2],   // logical coords
