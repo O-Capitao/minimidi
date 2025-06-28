@@ -330,92 +330,82 @@ int _render_grid( MiniMidi_TUI *self ){
 
 int _render_midi( MiniMidi_TUI *self )
 {
+    sprintf( MiniMidi_Log_log_line, "minimidi-tui.c > _render_midi() : Entering" );
+    MiniMidi_Log_writeline();
 
-    // sprintf( MiniMidi_Log_log_line, "minimidi-tui.c > _render_midi() : Entering" );
-    // MiniMidi_Log_writeline();
+    MiniMidi_Event_List_Node *cursor;
+    MiniMidi_Event *aux;
 
-    // static int rendered_ONs[2][100];
-    // int rendered_ONs_ctr = 0;
+    MiniMidi_get_events_in_range(
+        self->file,
+        self->midi_events_list,
+        self->logical_start[0],
+        self->logical_start[0] + self->logical_size[0],
+        self->logical_start[1],
+        self->logical_start[1] + self->logical_size[1]
+    );
 
-    // for (int i = 0; i < 2; i++){
-    //     for (int j = 0; j < 2; j++){
-    //         rendered_ONs[i][j] = 0;
-    //     }
-    // }
+    cursor = self->midi_events_list->first;
+    int cursor_tick, cursor_note, tgt_col, note_line, cursor_tick_aux, tgt_col_aux;
 
+    while (cursor)
+    {
+        cursor_tick = cursor->value->abs_ticks;
+        cursor_note = ( cursor->value->note.octave * 12 ) + (int)( cursor->value->note.note );
 
-    // MiniMidi_Event_List_Node *cursor;
-    // MiniMidi_Event *aux;
+        note_line = _coords__note_2_grid_row( self->logical_start[1], cursor_note, LINES_PER_SEMITONE, self->grid_size[1] );
+        tgt_col = GRID_LEFT_LABELS_WIDTH + 1 + ( (cursor_tick - self->logical_start[0]) / self->ticks_per_col );
 
-    // MiniMidi_get_events_in_range(
-    //     self->file,
-    //     self->midi_events_list,
-    //     self->file->header->ppqn * self->logical_start[0],
-    //     self->file->header->ppqn * (self->logical_start[0] + self->logical_size[0]),
-    //     self->logical_start[1],
-    //     self->logical_start[1] + self->logical_size[1]
-    // );
+        // draw this fucker
+        if ( cursor->value->status_code == MIDI_NOTE_ON )
+        {
+            // paint leading edge of event
+            wattron( self->grid_derwin,  COLOR_PAIR (BLACK_ON_CYAN )); // wattron( self->grid_derwin, COLOR_PAIR(2));
+            mvwaddch( self->grid_derwin, note_line, tgt_col, ' ' ); // |A_REVERSE);
+            wattroff( self->grid_derwin,  COLOR_PAIR (BLACK_ON_CYAN ));
 
+            // paint remaining until corresponding note_off
+            aux = (cursor->value)->next;
+            cursor_tick_aux = aux->abs_ticks;
+            
+            if ( cursor_tick_aux < self->logical_start[0] + self->logical_size[0]){
+                tgt_col_aux = GRID_LEFT_LABELS_WIDTH + 1 + (( cursor_tick_aux - self->logical_start[0]) / self->ticks_per_col );
+            } else {
+                tgt_col_aux = self->grid_size[0];
+            }
 
-    // cursor = self->midi_events_list->first;
-    // int cursor_beat, cursor_note, beat_col, note_line, cursor_beat_aux, beat_col_aux;
+            wattron( self->grid_derwin, COLOR_PAIR(BLACK_ON_GREEN));
+                
+            for (int b = tgt_col + 1; b < tgt_col_aux; b++) {
+                mvwaddch( self->grid_derwin, note_line, b, ' ' );
+            }
+            wattroff( self->grid_derwin, COLOR_PAIR(BLACK_ON_GREEN ));
 
-    // while (cursor)
-    // {
-    //     cursor_beat = cursor->value->abs_ticks / self->file->header->ppqn;
-    //     cursor_note = ( cursor->value->note.octave * 12 ) + (int)( cursor->value->note.note );
+        } else if ( cursor->value->status_code == MIDI_NOTE_OFF )
+        {
+            // handle cases of no NOTE_ON in screen
+            aux = (cursor->value)->prev;
+            assert( aux != NULL );
 
-    //     note_line = _coords__note_2_grid_row( self->logical_start[1], cursor_note, LINES_PER_SEMITONE, self->grid_size[1] );
-    //     beat_col = GRID_LEFT_LABELS_WIDTH + 1 + _coords__beat_2_grid_col( self->logical_start[0], cursor_beat, self->cols_in_beat, self->beats_in_bar );
+            if (aux->abs_ticks < self->logical_start[0]){
+                
+                // paint from beat_col + 1 until beat_col_aux
+                wattron( self->grid_derwin, COLOR_PAIR(BLACK_ON_GREEN));
+                
+                for (int b = GRID_LEFT_LABELS_WIDTH + 1; b <= tgt_col; b++) {
+                    mvwaddch( self->grid_derwin, note_line, b, ' ' );
+                }
+                
+                wattroff( self->grid_derwin, COLOR_PAIR(BLACK_ON_GREEN ));
+            }
+        }
 
-    //     // draw this fucker
-    //     if ( cursor->value->status_code == MIDI_NOTE_ON )
-    //     {
-    //         rendered_ONs[0][rendered_ONs_ctr] = beat_col;
-    //         rendered_ONs[1][rendered_ONs_ctr] = note_line;
-    //         rendered_ONs_ctr ++;
-
-    //         // paint leading edge of event
-    //         wattron( self->grid_derwin,  COLOR_PAIR (BLACK_ON_CYAN )); // wattron( self->grid_derwin, COLOR_PAIR(2));
-    //         mvwaddch( self->grid_derwin, note_line, beat_col, ' ' ); // |A_REVERSE);
-    //         wattroff( self->grid_derwin,  COLOR_PAIR (BLACK_ON_CYAN ));
-
-    //         // TODO:
-    //         // -> This logic...
-    //         // // paint remaining until corresponding note_off
-    //         aux = (cursor->value)->next;
-
-    //         if (aux == NULL){
-
-    //         }
-
-    //         cursor_beat_aux = aux->abs_ticks / self->file->header->ppqn;
-
-    //         // check if next is in bounds:
-    //         if (cursor_beat_aux < self->logical_start[0] + self->logical_size[0]){
-    //             beat_col_aux = GRID_LEFT_LABELS_WIDTH + 1 + _coords__beat_2_grid_col( self->logical_start[0], cursor_beat_aux, self->cols_in_beat, self->beats_in_bar );
-    //         } else {
-    //             beat_col_aux = self->grid_size[0];
-    //         }
-
-    //         // paint from beat_col + 1 until beat_col_aux
-    //         wattron( self->grid_derwin, COLOR_PAIR(BLACK_ON_GREEN));
-    //         for (int b = beat_col + 1; b < beat_col_aux; b++) {
-    //             mvwaddch( self->grid_derwin, note_line, b, ' ' );
-    //         }
-    //         wattroff( self->grid_derwin, COLOR_PAIR(BLACK_ON_GREEN ));
-
-    //     } else if ( cursor->value->status_code == MIDI_NOTE_OFF )
-    //     {
-
-    //     }
-
-    //     cursor = cursor->next;
-    // }
-
+        cursor = cursor->next;
+    }
 
     return 0;
 }
+
 /**
  * PUBLIC
  */
