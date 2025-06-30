@@ -18,12 +18,13 @@
 */
 typedef struct MiniMidi_TUI
 {
-    int ticks_per_col,          //    cols_in_beat,
-        beats_in_bar,
-        logical_size[2],    // a pair { n_beats, n_semitones }
+    int ticks_per_col,      // zoom lvl
+        beats_in_bar,       // time sig
+        logical_size[2],    // a pair { n_ticks, n_semitones }
         logical_start[2],   // logical coords
         grid_size[2],       // terminal coords
-        outer_size[2];
+        outer_size[2],      // terminal size
+        move_increment;     // how many ticks are moved by a press of <- or ->
 
     bool is_dirty,
         is_running;

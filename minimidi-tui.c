@@ -60,6 +60,9 @@ int _update_sizes( MiniMidi_TUI *self )
     self->logical_size[0] = self->grid_size[0] * self->ticks_per_col;
     self->logical_size[1] = ( self->grid_size[1] - 2 ) / LINES_PER_SEMITONE;
 
+    // calc movement increment
+    self->move_increment = self->logical_size[0] / 4;
+
     return 0;
 }
 /**
@@ -170,13 +173,15 @@ int _handle_input( MiniMidi_TUI *self )
             // Handle down arrow key
             break;
         case KEY_LEFT:
-            if (self->logical_start[0] > 0)
+            if (self->logical_start[0] > self->move_increment) // dont allow to go bellow zero
             {
-                self->logical_start[0] -= self->file->header->ppqn * self->beats_in_bar; /* left 1 bar */
+                self->logical_start[0] -= self->move_increment;
+            } else {
+                self->logical_start[0] = 0;
             }
             break;
         case KEY_RIGHT:
-            self->logical_start[0] += self->file->header->ppqn * self->beats_in_bar; /* right 1 bar */
+            self->logical_start[0] += self->move_increment;
             break;
         case 'q':
         case 'Q':
@@ -257,16 +262,13 @@ int _render_grid( MiniMidi_TUI *self ){
     MiniMidi_Log_writeline();
     
     int err;
-    int line_index, aux_line_index, beat_counter, bar_counter;
+    int line_index, aux_line_index, beat_counter, bar_counter, col_in_grid;
     int ppqn = self->file->header->ppqn;
 
     bool is_new_beat = false;
-    int col_offset = GRID_LEFT_LABELS_WIDTH + 1;
-    int col_in_grid = col_offset;
     char bar_number_srt[10];
     int bar_offset = (self->logical_start[0] / ppqn) / self->beats_in_bar;
     int x_ticks = 0;
-
 
     for (int i_note = self->logical_start[1]; i_note < self->logical_start[1] + self->logical_size[1]; i_note ++ ){
 
@@ -279,7 +281,8 @@ int _render_grid( MiniMidi_TUI *self ){
         bar_counter = 0;
         
         // cycle through drawable cols
-        for (int j = col_offset; j < self->grid_size[0] - 1 /* box */; j ++ ){
+        for (int j = GRID_LEFT_LABELS_WIDTH; j < self->grid_size[0] - 1 /* box */; j ++ ){
+            
 
             // dash under even beats
             if ( beat_counter % 2 == 0 ){
@@ -287,16 +290,14 @@ int _render_grid( MiniMidi_TUI *self ){
                     return 1;
             }
 
-            col_in_grid = j - col_offset;
+            col_in_grid = j - GRID_LEFT_LABELS_WIDTH + 1;
 
             x_ticks = self->logical_start[0] + col_in_grid * self->ticks_per_col;
 
-            
             // beat is incremented every cols_in_beat
             // is_new_beat = col_in_grid != 0 && ( (col_in_grid + 1) % self->cols_in_beat ) == 0;
             is_new_beat = ( x_ticks - beat_counter * ppqn ) >=  ppqn;
 
-            if (col_in_grid == 0){ goto draw_bar; } // dirty stuff to not write code
             
             if (is_new_beat) {
                 beat_counter++;
@@ -304,12 +305,11 @@ int _render_grid( MiniMidi_TUI *self ){
                 if ( beat_counter % self->beats_in_bar == 0) {
                 
                     bar_counter++;
-                    
-                    // dirty stuff comes here
-                    draw_bar:
+
+
                     if ((err = mvwaddch( self->grid_derwin, aux_line_index, j, bar_delim )))
                         return 1;
-
+                
                     // annotate the bar num for the 1st line only
                     if (i_note == (self->logical_start[1] + self->logical_size[1] - 1) 
                         && j < self->grid_size[0] - 10 ){
@@ -348,20 +348,24 @@ int _render_midi( MiniMidi_TUI *self )
     cursor = self->midi_events_list->first;
     int cursor_tick, cursor_note, tgt_col, note_line, cursor_tick_aux, tgt_col_aux;
 
+
     while (cursor)
     {
         cursor_tick = cursor->value->abs_ticks;
         cursor_note = ( cursor->value->note.octave * 12 ) + (int)( cursor->value->note.note );
 
         note_line = _coords__note_2_grid_row( self->logical_start[1], cursor_note, LINES_PER_SEMITONE, self->grid_size[1] );
-        tgt_col = GRID_LEFT_LABELS_WIDTH + 1 + ( (cursor_tick - self->logical_start[0]) / self->ticks_per_col );
+
+
+        tgt_col = GRID_LEFT_LABELS_WIDTH + ( (cursor_tick - self->logical_start[0]) / self->ticks_per_col );
+        
 
         // draw this fucker
         if ( cursor->value->status_code == MIDI_NOTE_ON )
         {
             // paint leading edge of event
-            wattron( self->grid_derwin,  COLOR_PAIR (BLACK_ON_CYAN )); // wattron( self->grid_derwin, COLOR_PAIR(2));
-            mvwaddch( self->grid_derwin, note_line, tgt_col, ' ' ); // |A_REVERSE);
+            wattron( self->grid_derwin,  COLOR_PAIR (BLACK_ON_CYAN ));
+            mvwaddch( self->grid_derwin, note_line, tgt_col, ' ' );
             wattroff( self->grid_derwin,  COLOR_PAIR (BLACK_ON_CYAN ));
 
             // paint remaining until corresponding note_off
@@ -369,7 +373,7 @@ int _render_midi( MiniMidi_TUI *self )
             cursor_tick_aux = aux->abs_ticks;
             
             if ( cursor_tick_aux < self->logical_start[0] + self->logical_size[0]){
-                tgt_col_aux = GRID_LEFT_LABELS_WIDTH + 1 + (( cursor_tick_aux - self->logical_start[0]) / self->ticks_per_col );
+                tgt_col_aux = GRID_LEFT_LABELS_WIDTH + (( cursor_tick_aux - self->logical_start[0]) / self->ticks_per_col );
             } else {
                 tgt_col_aux = self->grid_size[0];
             }
