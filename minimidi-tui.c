@@ -254,6 +254,16 @@ int _render_info( MiniMidi_TUI *self)
     return 0;
 }
 
+int _draw_bar_label( MiniMidi_TUI *self, int bar_n, int line_index, int col_index ){
+    static char bar_number_srt[10];
+    
+    wattron( self->grid_derwin, COLOR_PAIR(2));
+    snprintf( bar_number_srt, 10, "BAR%i", bar_n);
+    mvwprintw(self->grid_derwin, line_index, col_index, bar_number_srt);
+    wattroff( self->grid_derwin, COLOR_PAIR(2));
+
+    return 0;
+}
 
 
 int _render_grid( MiniMidi_TUI *self ){
@@ -266,9 +276,13 @@ int _render_grid( MiniMidi_TUI *self ){
     int ppqn = self->file->header->ppqn;
 
     bool is_new_beat = false;
-    char bar_number_srt[10];
-    int bar_offset = (self->logical_start[0] / ppqn) / self->beats_in_bar;
+
+    // count 1 extra bar because BAR is not zero-based
+    int bar_offset = (self->logical_start[0] / ppqn) / self->beats_in_bar + 1;
     int x_ticks = 0;
+
+    sprintf( MiniMidi_Log_log_line, "minimidi-tui.c > _render_grid() : bar_offset = %i", bar_offset );
+    MiniMidi_Log_writeline();
 
     for (int i_note = self->logical_start[1]; i_note < self->logical_start[1] + self->logical_size[1]; i_note ++ ){
 
@@ -283,7 +297,9 @@ int _render_grid( MiniMidi_TUI *self ){
         // cycle through drawable cols
         for (int j = GRID_LEFT_LABELS_WIDTH; j < self->grid_size[0] - 1 /* box */; j ++ ){
             
-
+            // sprintf( MiniMidi_Log_log_line, "minimidi-tui.c > _render_grid() : iterating in columns, j=%i", j );
+            // MiniMidi_Log_writeline();
+            
             // dash under even beats
             if ( beat_counter % 2 == 0 ){
                 if ( (err = mvwaddch( self->grid_derwin, line_index, j, note_delim )) )
@@ -295,33 +311,44 @@ int _render_grid( MiniMidi_TUI *self ){
             x_ticks = self->logical_start[0] + col_in_grid * self->ticks_per_col;
 
             // beat is incremented every cols_in_beat
-            // is_new_beat = col_in_grid != 0 && ( (col_in_grid + 1) % self->cols_in_beat ) == 0;
             is_new_beat = ( x_ticks - beat_counter * ppqn ) >=  ppqn;
+
 
             
             if (is_new_beat) {
+
                 beat_counter++;
 
-                if ( beat_counter % self->beats_in_bar == 0) {
-                
-                    bar_counter++;
+                // sprintf( MiniMidi_Log_log_line, "minimidi-tui.c > _render_grid() : new beat %i at j=%i", beat_counter, j );
+                // MiniMidi_Log_writeline();
 
+                if ( beat_counter % self->beats_in_bar == 0) {
+ 
+                    bar_counter++;
 
                     if ((err = mvwaddch( self->grid_derwin, aux_line_index, j, bar_delim )))
                         return 1;
                 
                     // annotate the bar num for the 1st line only
-                    if (i_note == (self->logical_start[1] + self->logical_size[1] - 1) 
-                        && j < self->grid_size[0] - 10 ){
+                    if (i_note == (self->logical_start[1] + self->logical_size[1] - 1) && j < self->grid_size[0] - 10 ){
+
+                        sprintf( MiniMidi_Log_log_line, "minimidi-tui.c > _render_grid() : draw bar for BAR %i, line=%i, col=%i", bar_counter+bar_offset, i_note, j );
+                        MiniMidi_Log_writeline();
                         
-                        wattron( self->grid_derwin, COLOR_PAIR(2));
-                        snprintf( bar_number_srt, 10, "BAR%i", bar_offset + bar_counter );
-                        mvwprintw(self->grid_derwin, aux_line_index, j + 2, bar_number_srt);
-                        wattroff( self->grid_derwin, COLOR_PAIR(2));
+                        _draw_bar_label( self, bar_offset + bar_counter, aux_line_index, j + 2 );
                     }
                 }
-            }  
+            }
         }
+    }
+
+    // // finish by drawing the label for BAR 1 if it's visible
+    if (self->logical_start[0] == 0){
+        _draw_bar_label( 
+            self, 
+            1, 
+            _coords__note_2_grid_row( self->logical_start[1], self->logical_start[1] + self->logical_size[1] - 1, LINES_PER_SEMITONE, self->grid_size[1]) - 1,
+            GRID_LEFT_LABELS_WIDTH + 1 );
     }
 
     return 0;
