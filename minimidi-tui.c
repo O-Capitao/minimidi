@@ -61,7 +61,13 @@ int _update_sizes( MiniMidi_TUI *self )
     self->logical_size[1] = ( self->grid_size[1] - 2 ) / LINES_PER_SEMITONE;
 
     // calc movement increment
-    self->move_increment = self->logical_size[0] / 4;
+    // self->move_increment = self->logical_size[0] / 4; // the naughty plus one because integer arithmetic is hard
+
+    // move increment is always one bar, figure oput later how to handle cleanly
+    self->move_increment = 2 * self->file->header->ppqn;
+    sprintf( MiniMidi_Log_log_line, "minimidi-tui.c > _update_sizes() : set increment to %i", self->move_increment );
+    MiniMidi_Log_writeline();
+
 
     return 0;
 }
@@ -182,6 +188,10 @@ int _handle_input( MiniMidi_TUI *self )
             break;
         case KEY_RIGHT:
             self->logical_start[0] += self->move_increment;
+
+            sprintf( MiniMidi_Log_log_line, "minimidi-tui.c > _handle_input() : mving by %i, new start at %i", self->move_increment, self->logical_start[0] );
+            MiniMidi_Log_writeline();
+    
             break;
         case 'q':
         case 'Q':
@@ -343,7 +353,7 @@ int _render_grid( MiniMidi_TUI *self ){
     }
 
     // // finish by drawing the label for BAR 1 if it's visible
-    if (self->logical_start[0] == 0){
+    if (self->logical_start[0] % (4 * self->file->header->ppqn) == 0 ){
         _draw_bar_label( 
             self, 
             1, 
@@ -385,7 +395,9 @@ int _render_midi( MiniMidi_TUI *self )
 
 
         tgt_col = GRID_LEFT_LABELS_WIDTH + ( (cursor_tick - self->logical_start[0]) / self->ticks_per_col );
-        
+
+        sprintf( MiniMidi_Log_log_line, "minimidi-tui.c > _render_midi() : leading edge of event at tgt_col=%i, tick=%i, ticks_per_col=%i ", tgt_col, cursor_tick, self->ticks_per_col );
+        MiniMidi_Log_writeline();
 
         // draw this fucker
         if ( cursor->value->status_code == MIDI_NOTE_ON )
