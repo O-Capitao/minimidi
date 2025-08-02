@@ -106,6 +106,7 @@ typedef struct MiniMidi_File
 MiniMidi_File       *MiniMidi_File_init( char *file_path );
 // void                MiniMidi_File_print( MiniMidi_File *file );
 void                MiniMidi_File_free( MiniMidi_File *file );
+int                 MiniMidi_File_get_bpm( MiniMidi_File *file );
 
 
 /****************************************************************************************

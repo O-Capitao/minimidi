@@ -27,8 +27,24 @@ typedef struct MiniMidi_TUI
         move_increment;     // how many ticks are moved by a press of <- or ->
 
     bool is_dirty,
-        is_running;
-    
+        is_running,
+        is_playing;
+
+    int bpm;
+
+    // playback
+    int playback_time,
+        playback_midi_ticks,
+        playback_end_tick,
+        fps,
+        // playback_step_time_ms,
+        playback_total_time_ms;
+
+    int delta_ticks,
+        delta_t_ms;
+
+    int _cursor_position_ticks;
+
     // opened midi file
     MiniMidi_File *file;
     
@@ -37,6 +53,7 @@ typedef struct MiniMidi_TUI
 
     // derwin pointer -> Grid Area
     WINDOW *grid_derwin;
+    WINDOW *playback_derwin;
 
 } MiniMidi_TUI;
 
@@ -46,16 +63,7 @@ typedef struct MiniMidi_TUI
 
 // init all ncurses, sizes, load file, context
 int MiniMidi_TUI_init( MiniMidi_TUI *self, MiniMidi_File *file );
-
-// act upon result of user intput
-//  returns:
-//      running status
-int MiniMidi_TUI_update( MiniMidi_TUI *self );
-
-// put stuff in screen
-int MiniMidi_TUI_render( MiniMidi_TUI *self );
-
-// kill it
+int MiniMidi_TUI_step( MiniMidi_TUI *self );
 int MiniMidi_TUI_destroy( MiniMidi_TUI *self );
 
 #endif /* MINIMIDI_TUI_H */

@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 
+
 #include "globals.h"
 #include "minimidi.h"
 #include "minimidi-tui.h"
@@ -44,6 +45,7 @@ int main( int argc, char *argv[] )
     sprintf( MiniMidi_Log_log_line, "main: initting." );
     MiniMidi_Log_writeline();
 
+    // check if we're running in tmux
     if (tmux)
     {
         printf("Running inside tmux. Launching a new tmux session...\n");
@@ -63,12 +65,9 @@ int main( int argc, char *argv[] )
     }
 
 
-
     // Read the file passed in by arg
     MiniMidi_File *midi_file = MiniMidi_File_init( argv[1] );
-
-
-    
+ 
     if (midi_file == NULL) {
         printf(RED "ERROR" RESET " Failed to read MIDI file: %s\n", argv[1]);
         return 1;
@@ -79,14 +78,15 @@ int main( int argc, char *argv[] )
 
     int ERRSTATUS = 0;
 
-    while (ui->is_running)
+    /**
+     * MAIN LOOP
+     */
+    while (ui->is_running && ERRSTATUS == 0)
     {
-        MiniMidi_TUI_render( ui );
-        ERRSTATUS = MiniMidi_TUI_update( ui );
+        ERRSTATUS = MiniMidi_TUI_step( ui );
     }
 
     quit(ui, midi_file, ERRSTATUS ? true: false);
-    
     MiniMidi_Log_free();
 
     return 0;

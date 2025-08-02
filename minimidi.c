@@ -757,6 +757,12 @@ MiniMidi_File * MiniMidi_File_init( char *file_path )
     return retval;
 }
 
+// TODO:
+// make this real
+int MiniMidi_File_get_bpm( MiniMidi_File *f ){
+    return 120;
+}
+
 
 MiniMidi_Event_List *MiniMidi_Event_LList_init()
 {
@@ -873,7 +879,7 @@ int MiniMidi_get_events_in_range( MiniMidi_File *self,  MiniMidi_Event_List *lis
         }
     }
 
-    __dump_list_to_log( self, list); 
+    // __dump_list_to_log( self, list);
     
     return 0;
 }
