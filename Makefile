@@ -2,7 +2,7 @@
 # 	-I/opt/homebrew/include \
 # 	`pkg-config --cflags-only-I portaudio-2.0 sndfile fftw3f`
 
-LDFLAGS = -lncurses
+LDFLAGS = -lncurses -lpanel -lportaudio
 
 SOURCES = $(wildcard *.c) $(wildcard */*.c)
 
@@ -13,7 +13,7 @@ OUTPUTFILE=minimidi.a
 NOW := $(shell date +"%c" | tr ' :' '__')
 
 compile: main.c
-	gcc -g -o $(OUTPUTFILE) -g $(SOURCES) $(LDFLAGS) -Wall -pedantic
+	gcc -g -o $(OUTPUTFILE) -g $(SOURCES) $(LDFLAGS) -I/usr/include/portaudio -Wall -pedantic
 
 clean:
 	rm -f $(OUTPUTFILE) $(OBJS)
