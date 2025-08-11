@@ -1,29 +1,115 @@
 #include "minimidi-ring-buffer.h"
+#include <string.h>
+#include <assert.h>
+/**
+* PVT
+*/
+size_t _get_free_space( MiniMidi_Ring_Buffer *s ){
+    
+    if (s->head == s->tail){
+        return s->is_flipped ? s->size : 0;
+    }
 
-int MiniMidi_Ring_Buffer__init( MiniMidi_Ring_Buffer *self ) {
-    self->size = BUFFER_SIZE;
+    return s->is_flipped ?
+        s->size + s->tail - s->head - 1 :
+        s->size - (s->tail - s->head); 
+}
 
-    // not needed actually...
-    for (int i = 0; i < BUFFER_SIZE; i++) { self->data[i] = 0; }
 
-    self->head_index = 0;
-    self->tail_index = 0;
+/**
+ * PUB
+ */
+int MiniMidi_Ring_Buffer__init( MiniMidi_Ring_Buffer *s ) {
+    
+    s->size = BUFFER_SIZE;
+    s->head = s->tail = 0;
 
     return 0;
 }
 
-int MiniMidi_Ring_Buffer__destroy( MiniMidi_Ring_Buffer *self ){
+// is this needed?
+int MiniMidi_Ring_Buffer__destroy( MiniMidi_Ring_Buffer *s ){
     return 0;
 }
 
-int MiniMidi_Ring_Buffer__get_free_space( MiniMidi_Ring_Buffer *self ){
-    return 1; // nd
+
+// should I return the amount of items pushed / popped?
+int MiniMidi_Ring_Buffer__push_n( MiniMidi_Ring_Buffer *s, float *input, size_t n ){
+    
+    size_t _av = _get_free_space(s);
+    
+    
+    if ( n > _av ){
+        // ño available size...
+        return -1;
+    }
+
+    if (!s->is_flipped){
+        size_t _av_till_end = s->size - s->tail;
+
+        // index flip
+        if ( n > _av_till_end ){
+
+            if (memcpy( s->data + s->tail, input, _av_till_end * sizeof(float) ) != 0 ){
+                return -1;
+            }
+
+            if (memcpy( s->data, input + _av_till_end, (n - _av_till_end) * sizeof(float) ) != 0 ){
+                return -1;
+            }
+
+            s->tail = n - _av_till_end;
+            s->is_flipped = true;
+        
+        } else {
+            if (memcpy( s->data + s->tail, input, n * sizeof(float) ) != 0 ){
+                return -1;
+            }
+            s->tail += n;
+        }
+    } else {
+        // array is flipped...
+        if (memcpy( s->data + s->tail, input, n * sizeof(float) ) != 0 ){
+            return -1;
+        }
+        s->tail += n;
+    }
+
+    return n;
 }
 
-int MiniMidi_Ring_Buffer__push( MiniMidi_Ring_Buffer *self, float input ){
-    return 1;
-}
+int MiniMidi_Ring_Buffer__pop_n( MiniMidi_Ring_Buffer *s, float *output, size_t n ){
 
-int MiniMidi_Ring_Buffer__pop( MiniMidi_Ring_Buffer *self, float *output ){
-    return 1;
+    // if more items than stored are requested, fn returns what is there
+    int poppable = s->size - _get_free_space(s);
+    
+    int effective_to_pop = n > poppable ? poppable : n;
+
+
+    if (!s->is_flipped){
+        if (memcpy( output, s->data + s->head, effective_to_pop * sizeof(float) ) != 0 ){
+            return -1;
+        }
+        s->head += effective_to_pop;
+        
+    } else {
+
+        int _head_to_end = s->size - s->head;
+
+        // pop last _head_to_end elements
+        if (memcpy( output, s->data + s->head, _head_to_end * sizeof(float) ) != 0 ){
+            return -1;
+        }
+        if (memcpy( output + _head_to_end, s->data, (effective_to_pop - _head_to_end) * sizeof(float) ) != 0 ){
+            return -1;
+        }
+
+        s->head = effective_to_pop - _head_to_end;
+        
+        // sigh, unflip
+        s->is_flipped = false;
+
+    }
+
+    return effective_to_pop;
 }
