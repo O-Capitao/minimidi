@@ -1,6 +1,8 @@
 #include "minimidi-ring-buffer.h"
 #include <string.h>
 #include <assert.h>
+#include <stdlib.h>
+
 /**
 * PVT
 */
@@ -19,16 +21,19 @@ size_t _get_free_space( MiniMidi_Ring_Buffer *s ){
 /**
  * PUB
  */
-int MiniMidi_Ring_Buffer__init( MiniMidi_Ring_Buffer *s ) {
-    
-    s->size = BUFFER_SIZE;
-    s->head = s->tail = 0;
+MiniMidi_Ring_Buffer *MiniMidi_Ring_Buffer__init() {
+   
+    // MiniMidi_TUI *ui = (MiniMidi_TUI*)malloc( sizeof( MiniMidi_TUI ) );
+    MiniMidi_Ring_Buffer *b = (MiniMidi_Ring_Buffer*)malloc(sizeof( MiniMidi_Ring_Buffer));
+    b->size = BUFFER_SIZE;
+    b->head = b->tail = 0;
 
-    return 0;
+    return b;
 }
 
 // is this needed?
 int MiniMidi_Ring_Buffer__destroy( MiniMidi_Ring_Buffer *s ){
+    free(s);
     return 0;
 }
 

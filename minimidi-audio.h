@@ -7,6 +7,7 @@
 #include <portaudio.h>
 
 #include "minimidi-log.h"
+#include "minimidi-ring-buffer.h"
 
 #define DEBUG 0
 
@@ -39,11 +40,14 @@ typedef struct MiniMidi_Synth_Event {
 } MiniMidi_Synth_Event;
 
 typedef struct MiniMidi_Synth {
+    
     MiniMidi_Oscillator oscillators[ OSCILATORS_MAX ];
     int n_oscilators;
 
-    float buffer[BUFF_SIZE];
-    int n_samples_in_buffer;
+    // float buffer[BUFF_SIZE];
+    // int n_samples_in_buffer;
+
+    MiniMidi_Ring_Buffer *rb;
 
     PaStream *pa_stream;
 } MiniMidi_Synth;

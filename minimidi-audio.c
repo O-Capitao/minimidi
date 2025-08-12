@@ -3,21 +3,28 @@
 
 
 
-static int paStreamCallback( const void *in_buff, void *out_buff, unsigned long frames_per_buffer, const PaStreamCallbackTimeInfo* timeInfo, PaStreamCallbackFlags statusFlags, void *userData ){
+static int paStreamCallback( const void *inputBuffer, void *outputBuffer,
+                             unsigned long frames_per_buffer,
+                             const PaStreamCallbackTimeInfo* timeInfo,
+                             PaStreamCallbackFlags statusFlags,
+                             void *_my_data ){
 
+    MiniMidi_Ring_Buffer *rb = (MiniMidi_Ring_Buffer*)_my_data;
+    float *out = (float*)outputBuffer;
+    (void) inputBuffer;
 
+    MiniMidi_Ring_Buffer__pop_n( rb, out, frames_per_buffer );
 
-    return 1;
+    return 0;
 }
 
 
 
-int MiniMidi_Synth_init( MiniMidi_Synth *self ){
+int MiniMidi_Synth_init( MiniMidi_Synth *s ){
 
     // init memory
-    self->n_oscilators = 0;
-    self->n_samples_in_buffer = 0;
-
+    s->n_oscilators = 0;
+    s->rb = MiniMidi_Ring_Buffer__init();
 
     // init Portaudio
     if ( Pa_Initialize() != paNoError){
@@ -27,14 +34,14 @@ int MiniMidi_Synth_init( MiniMidi_Synth *self ){
 
     // open stream
     PaError e = Pa_OpenDefaultStream(
-        &self->pa_stream,
+        &s->pa_stream,
         0,
         N_CHANNELS,
         paFloat32,
         AUDIO_FRAMERATE,
         BUFF_SIZE,
         paStreamCallback,
-        self->buffer
+        s->rb
     );
 
 
@@ -43,7 +50,7 @@ int MiniMidi_Synth_init( MiniMidi_Synth *self ){
     }
 
     // start stream
-    e = Pa_StartStream(self->pa_stream);
+    e = Pa_StartStream(s->pa_stream);
 
     if (e != paNoError){
         return 1;
@@ -52,14 +59,16 @@ int MiniMidi_Synth_init( MiniMidi_Synth *self ){
     return 0;
 }
 
-int MiniMidi_Synth_destroy( MiniMidi_Synth *self ){
-    PaError e = Pa_StopStream(self->pa_stream);
+
+
+int MiniMidi_Synth_destroy( MiniMidi_Synth *s ){
+    PaError e = Pa_StopStream(s->pa_stream);
 
     if (e != paNoError){
         return 1;
     }
 
-    e = Pa_CloseStream(self->pa_stream);
+    e = Pa_CloseStream(s->pa_stream);
 
 
 
@@ -67,7 +76,9 @@ int MiniMidi_Synth_destroy( MiniMidi_Synth *self ){
         return 1;
     }
 
-    self->pa_stream = NULL;
+    s->pa_stream = NULL;
 
     return 0;
 }
+
+

@@ -13,7 +13,8 @@ typedef struct MiniMidi_Ring_Buffer {
     bool is_flipped;
 } MiniMidi_Ring_Buffer;
 
-int MiniMidi_Ring_Buffer__init      ( MiniMidi_Ring_Buffer *self );
+MiniMidi_Ring_Buffer *MiniMidi_Ring_Buffer__init();
+
 int MiniMidi_Ring_Buffer__destroy   ( MiniMidi_Ring_Buffer *self );
 
 /**
