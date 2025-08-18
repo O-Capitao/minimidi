@@ -23,7 +23,6 @@ size_t _get_free_space( MiniMidi_Ring_Buffer *s ){
  */
 MiniMidi_Ring_Buffer *MiniMidi_Ring_Buffer__init() {
    
-    // MiniMidi_TUI *ui = (MiniMidi_TUI*)malloc( sizeof( MiniMidi_TUI ) );
     MiniMidi_Ring_Buffer *b = (MiniMidi_Ring_Buffer*)malloc(sizeof( MiniMidi_Ring_Buffer));
     b->size = BUFFER_SIZE;
     b->head = b->tail = 0;

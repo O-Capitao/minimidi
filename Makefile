@@ -2,7 +2,7 @@
 # 	-I/opt/homebrew/include \
 # 	`pkg-config --cflags-only-I portaudio-2.0 sndfile fftw3f`
 
-LDFLAGS = -lncurses -lpanel -lportaudio
+LDFLAGS = -lncurses -lpanel -lportaudio -lm
 
 SOURCES = $(wildcard *.c) $(wildcard */*.c)
 

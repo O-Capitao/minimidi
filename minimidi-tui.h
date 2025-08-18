@@ -7,8 +7,11 @@
 
 #include "minimidi.h"
 #include "minimidi-log.h"
+#include "minimidi-audio.h"
 
 #define DEBUG 0
+// 
+#define CMD_BUFFER_SIZE 128
 
 /***
 *  * MiniMidi State:
@@ -54,6 +57,11 @@ typedef struct MiniMidi_TUI
     // derwin pointer -> Grid Area
     WINDOW *grid_derwin;
     WINDOW *playback_derwin;
+
+    // playback
+    MiniMidi_Synth *synth;
+    MiniMidi_Synth_Event synth_cmd_buffer[CMD_BUFFER_SIZE];
+    size_t cmd_buffer_count;
 
 } MiniMidi_TUI;
 

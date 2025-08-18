@@ -78,8 +78,9 @@ int _update_sizes( MiniMidi_TUI *self )
 
     // move increment is always one bar, figure oput later how to handle cleanly
     self->move_increment = 2 * self->file->header->ppqn;
-    sprintf( MiniMidi_Log_log_line, "minimidi-tui.c > _update_sizes() : set increment to %i", self->move_increment );
-    MiniMidi_Log_writeline();
+
+    // sprintf( MiniMidi_Log_log_line, "minimidi-tui.c > _update_sizes() : set increment to %i", self->move_increment );
+    // MiniMidi_Log_writeline();
 
 
     return 0;
@@ -606,6 +607,10 @@ int MiniMidi_TUI_init( MiniMidi_TUI *self, MiniMidi_File *file )
 
     if ( _init_ncurses(self) ) return 1;
 
+    // init audio
+    self->synth = MiniMidi_Synth_init();
+    self->cmd_buffer_count = 0;
+
     return 0;
 }
 
@@ -681,9 +686,12 @@ int MiniMidi_TUI_step( MiniMidi_TUI *self ){
 
 int MiniMidi_TUI_destroy( MiniMidi_TUI *self)
 {
+    MiniMidi_Synth_destroy(self->synth);
+
     delwin( self->grid_derwin );
     endwin();
     free(self);
+
 
     return 0;
 }
