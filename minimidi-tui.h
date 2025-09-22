@@ -54,14 +54,16 @@ typedef struct MiniMidi_TUI
     // list with events that should be drawn to current grid
     MiniMidi_Event_List *midi_events_list;
 
+    // buffer of midievents
+    size_t evts_in_buffer;
+    MiniMidi_Event evt_buffer[CMD_BUFFER_SIZE];
+
     // derwin pointer -> Grid Area
     WINDOW *grid_derwin;
     WINDOW *playback_derwin;
 
     // playback
     MiniMidi_Synth *synth;
-    MiniMidi_Synth_Event synth_cmd_buffer[CMD_BUFFER_SIZE];
-    size_t cmd_buffer_count;
 
 } MiniMidi_TUI;
 

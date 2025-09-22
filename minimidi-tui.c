@@ -222,6 +222,7 @@ int _handle_input( MiniMidi_TUI *self )
             MiniMidi_Log_writeline();
     
             break;
+        // PLAY THAT FUNKY MUSIC WHITE BOY
         case ' ':
 
             sprintf( MiniMidi_Log_log_line, "minimidi-tui.c > _handle_input() : pressed SPACE" );
@@ -577,7 +578,7 @@ int MiniMidi_TUI_init( MiniMidi_TUI *self, MiniMidi_File *file )
     self->midi_events_list = MiniMidi_Event_LList_init();
 
     // TODO:
-    // what here? input not smooth at lower franerates
+    // what here? display not smooth at lower franerates
     self->fps = 15;
 
     // INIT PLAYBACK STUFF
@@ -591,9 +592,11 @@ int MiniMidi_TUI_init( MiniMidi_TUI *self, MiniMidi_File *file )
         self->file->header->ppqn,
         self->beats_in_bar );
     
-    // TODO: make bpm smarter
+    // TODO: make bpm smarter, settable
+    // for now: 120 only lol
     self->bpm = 120;
 
+    
     self->playback_total_time_ms = _midi_tick_to_ms(
         self->playback_end_tick,
         self->bpm,
@@ -608,12 +611,11 @@ int MiniMidi_TUI_init( MiniMidi_TUI *self, MiniMidi_File *file )
     if ( _init_ncurses(self) ) return 1;
 
     // init audio
-    self->synth = MiniMidi_Synth_init();
-    self->cmd_buffer_count = 0;
+    self->synth = MiniMidi_Synth_init( file->track->event_arr );
+    self->evts_in_buffer = 0;
 
     return 0;
 }
-
 
 
 
@@ -674,11 +676,12 @@ int MiniMidi_TUI_step( MiniMidi_TUI *self ){
             self->logical_start[0] += self->delta_ticks;
         }
 
+        // fill audio buffer if needed
+        MiniMidi_Synth_step(self->synth);
+
         // sleep until next step
         ellapsed = (clock() - step_start) * 1000 / CLOCKS_PER_SEC;
         usleep( (self->delta_t_ms - ellapsed) * 1000 );
-
-        // send a bunch of things into the audio bufer or whatever
 
     }
     return 0;

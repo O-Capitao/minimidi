@@ -134,6 +134,7 @@ typedef struct MiniMidi_Event_List
 MiniMidi_Event_List      *MiniMidi_Event_LList_init();
 
 int MiniMidi_get_events_in_range( MiniMidi_File *self, MiniMidi_Event_List *list, int start_ticks, int end_ticks, int start_note, int end_note );
+void MiniMidi_Event_List__print_to_str( MiniMidi_Event_List *list, char *output );
 // void MiniMidi_Event_to_string_log( MiniMidi_Event *me, char *str );
 
 #endif /* MINIMIDI_H */
