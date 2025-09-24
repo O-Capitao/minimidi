@@ -9,10 +9,10 @@
 
 #define ARG_MAX_LEN 100
 
-void quit( MiniMidi_TUI *ui, MiniMidi_File *f, int is_error )
+void quit( MM_TUI *ui, MM_File *f, int is_error )
 {   
-    MiniMidi_TUI_destroy(ui);
-    MiniMidi_File_free( f );
+    MM_TUI_destroy(ui);
+    MM_File_free( f );
     if (is_error)
     {
         printf(RED "ERROR" RESET "Houston we have a problem...");
@@ -41,9 +41,9 @@ int main( int argc, char *argv[] )
     char *tmux = getenv("TMUX");
     
     // init logger
-    MiniMidi_Log_init();
-    sprintf( MiniMidi_Log_log_line, "main: initting." );
-    MiniMidi_Log_writeline();
+    MM_Log_init();
+    sprintf( MM_Log_log_line, "main: initting." );
+    MM_Log_writeline();
 
     // check if we're running in tmux
     if (tmux)
@@ -66,15 +66,15 @@ int main( int argc, char *argv[] )
 
 
     // Read the file passed in by arg
-    MiniMidi_File *midi_file = MiniMidi_File_init( argv[1] );
+    MM_File *midi_file = MM_File_init( argv[1] );
  
     if (midi_file == NULL) {
         printf(RED "ERROR" RESET " Failed to read MIDI file: %s\n", argv[1]);
         return 1;
     }
 
-    MiniMidi_TUI *ui = (MiniMidi_TUI*)malloc( sizeof( MiniMidi_TUI ) );
-    MiniMidi_TUI_init(ui, midi_file );
+    MM_TUI *ui = (MM_TUI*)malloc( sizeof( MM_TUI ) );
+    MM_TUI_init(ui, midi_file );
 
     int ERRSTATUS = 0;
 
@@ -83,11 +83,15 @@ int main( int argc, char *argv[] )
      */
     while (ui->is_running && ERRSTATUS == 0)
     {
-        ERRSTATUS = MiniMidi_TUI_step( ui );
+        ERRSTATUS = MM_TUI_step( ui );
+
+        if (ERRSTATUS){
+            printf("Like whatever");
+        }
     }
 
     quit(ui, midi_file, ERRSTATUS ? true: false);
-    MiniMidi_Log_free();
+    MM_Log_free();
 
     return 0;
 }

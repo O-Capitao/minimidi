@@ -1,5 +1,5 @@
-#ifndef MINIMIDI_GLOB_H
-#define MINIMIDI_GLOB_H
+#ifndef MM_GLOB_H
+#define MM_GLOB_H
 
 typedef unsigned char _Byte;
 
@@ -24,4 +24,4 @@ typedef unsigned char _Byte;
 
 #define TAB "   "
 
-#endif /* MINIMIDI_GLOB_H */
+#endif /* MM_GLOB_H */

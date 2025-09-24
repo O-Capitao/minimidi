@@ -19,8 +19,8 @@ size_t MM_Ring_Buffer__get_free_space( MM_Ring_Buffer *s ){
 
 MM_Ring_Buffer *MM_Ring_Buffer__init( size_t item_size, size_t buffer_size ) {
 
-    snprintf( MiniMidi_Log_log_line, sizeof(MiniMidi_Log_log_line), "minimidi-ring-buffer > MM_Ring_Buffer__init()");
-    MiniMidi_Log_writeline();
+    snprintf( MM_Log_log_line, sizeof(MM_Log_log_line), "minimidi-ring-buffer > MM_Ring_Buffer__init()");
+    MM_Log_writeline();
    
     MM_Ring_Buffer *b = (MM_Ring_Buffer*)malloc(sizeof( MM_Ring_Buffer));
 
@@ -29,11 +29,12 @@ MM_Ring_Buffer *MM_Ring_Buffer__init( size_t item_size, size_t buffer_size ) {
     b->head = b->tail = 0;
     b->data = (void *)malloc( buffer_size * item_size );
 
-    snprintf( MiniMidi_Log_log_line, sizeof(MiniMidi_Log_log_line), "minimidi-ring-buffer > MM_Ring_Buffer__init() completed.");
-    MiniMidi_Log_writeline();
+    snprintf( MM_Log_log_line, sizeof(MM_Log_log_line), "minimidi-ring-buffer > MM_Ring_Buffer__init() completed.");
+    MM_Log_writeline();
 
     return b;
 }
+
 
 int MM_Rng_Buffer__destroy( MM_Ring_Buffer *self){
     free( self->data );
@@ -55,7 +56,9 @@ int MM_Ring_Buffer__pop_n( MM_Ring_Buffer *s, void *output_arr, size_t n ){
         memcpy((char*)output_arr + _head_to_end * s->item_size, s->data, (effective_to_pop - _head_to_end) * s->item_size);
     }
 
-    s->head = (s->head + effective_to_pop) % s->size;
+    int aux_tail = s->head + effective_to_pop;
+    s->head = aux_tail > s->size ? aux_tail - s->size : aux_tail;
+
     if (s->head == s->tail) {
         s->is_flipped = false;
     }

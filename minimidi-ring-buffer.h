@@ -1,5 +1,5 @@
-#ifndef MINIMIDI_RING
-#define MINIMIDI_RING
+#ifndef MM_RING
+#define MM_RING
 
 
 #include <stdbool.h>
@@ -24,5 +24,7 @@ int    MM_Ring_Buffer__destroy        ( MM_Ring_Buffer *self );
 int    MM_Ring_Buffer__pop_n          ( MM_Ring_Buffer *self, void *output_arr, size_t n );
 int    MM_Ring_Buffer__push_n         ( MM_Ring_Buffer *self, void *input_arr, size_t n );
 size_t MM_Ring_Buffer__get_free_space ( MM_Ring_Buffer *s );
+
+int    MM_Ring_Buffer_clear           ( MM_Ring_Buffer *s );
 
 #endif

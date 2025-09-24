@@ -1,5 +1,5 @@
-#ifndef MINIMIDI_TUI_AUDIO
-#define MINIMIDI_TUI_AUDIO
+#ifndef MM_TUI_AUDIO
+#define MM_TUI_AUDIO
 
 #include <ncurses.h>
 #include <stdbool.h>
@@ -23,35 +23,36 @@
 *   simple synth
 *   to play the midi
 */
-typedef struct MiniMidi_Oscillator {
+typedef struct MM_Oscillator {
     float theta,
         dtheta,
         phase,
         amp;
     bool is_active;
-} MiniMidi_Oscillator;
+} MM_Oscillator;
 
-int MiniMidi_Oscillator_produce( MiniMidi_Oscillator *self, float *output, size_t output_size );
+int MM_Oscillator_produce( MM_Oscillator *self, float *output, size_t output_size );
 
-typedef struct MiniMidi_Synth {
+typedef struct MM_Synth {
     
-    MiniMidi_Oscillator oscillators[ OSCILATORS_MAX ];
+    MM_Oscillator oscillators[ OSCILATORS_MAX ];
     int n_oscilators;
     double tempered_freqs[NOTE_RANGE];
     float last_processed_evt_time,
         current_processing_time,
         delta_t;
-
     MM_Ring_Buffer *rb;
-    MiniMidi_Event *midi_evts_arr;
+    MM_Event *midi_evts_arr;
 
     PaStream *pa_stream;
-} MiniMidi_Synth;
 
-MiniMidi_Synth *MiniMidi_Synth_init( MiniMidi_Event *track_events );
-int MiniMidi_Synth_destroy( MiniMidi_Synth *self );
-int MiniMidi_Synth_step( MiniMidi_Synth *self );
-int MiniMidi_Synth_play( MiniMidi_Synth *self );
-int MiniMidi_Synth_stop( MiniMidi_Synth *self );
+    bool is_playing;
+} MM_Synth;
 
-#endif // MINIMIDI_TUI_AUDIO
+MM_Synth *MM_Synth_init( MM_Event *track_events );
+int MM_Synth_destroy( MM_Synth *self );
+int MM_Synth_step( MM_Synth *self );
+// int MM_Synth_play( MM_Synth *self );
+// int MM_Synth_stop( MM_Synth *self );
+
+#endif // MM_TUI_AUDIO

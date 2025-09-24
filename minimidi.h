@@ -1,5 +1,5 @@
-#ifndef MINIMIDI_H
-#define MINIMIDI_H
+#ifndef MM_H
+#define MM_H
 
 #include <stdlib.h>
 #include <stdint.h>
@@ -54,16 +54,16 @@ typedef struct {
 *
 *   -> Main Struct Defs
 ****************************************************************************************/
-typedef struct MiniMidi_Header
+typedef struct MM_Header
 {
     size_t   length;
     uint16_t format;
     uint16_t ntrks;
     uint16_t ppqn;
 
-} MiniMidi_Header;
+} MM_Header;
 
-typedef struct MiniMidi_Event
+typedef struct MM_Event
 {
     uint64_t       delta_ticks, 
                    abs_ticks;
@@ -74,18 +74,18 @@ typedef struct MiniMidi_Event
 
     // if a sequence is implied, such as NOTE ON / OFF pair,
     // use this to hook up related events
-    struct MiniMidi_Event *next, *prev;
+    struct MM_Event *next, *prev;
 
-} MiniMidi_Event;
+} MM_Event;
 
-typedef struct MiniMidi_Track
+typedef struct MM_Track
 {
     size_t          length;
     size_t          n_events;
-    MiniMidi_Event *event_arr;
+    MM_Event *event_arr;
     size_t          total_ticks,
                     total_beats;
-} MiniMidi_Track;
+} MM_Track;
 
 
 
@@ -94,19 +94,19 @@ typedef struct MiniMidi_Track
 *
 *   -> Main Exposed Structure -> Midi File
 ****************************************************************************************/
-typedef struct MiniMidi_File
+typedef struct MM_File
 {
     char                 *filepath;
-    MiniMidi_Header      *header;
-    MiniMidi_Track       *track;
+    MM_Header      *header;
+    MM_Track       *track;
     size_t               length;
 
-} MiniMidi_File;
+} MM_File;
 
-MiniMidi_File       *MiniMidi_File_init( char *file_path );
-// void                MiniMidi_File_print( MiniMidi_File *file );
-void                MiniMidi_File_free( MiniMidi_File *file );
-int                 MiniMidi_File_get_bpm( MiniMidi_File *file );
+MM_File       *MM_File_init( char *file_path );
+// void                MM_File_print( MM_File *file );
+void                MM_File_free( MM_File *file );
+int                 MM_File_get_bpm( MM_File *file );
 
 
 /****************************************************************************************
@@ -114,27 +114,27 @@ int                 MiniMidi_File_get_bpm( MiniMidi_File *file );
 *
 *   -> Aux Data Structures -> For lookup / state edit
 ****************************************************************************************/
-typedef struct MiniMidi_Event_List_Node
+typedef struct MM_Event_List_Node
 {
-    MiniMidi_Event *value;
+    MM_Event *value;
     
-    struct MiniMidi_Event_List_Node *next;
+    struct MM_Event_List_Node *next;
 
-} MiniMidi_Event_List_Node;
+} MM_Event_List_Node;
 
-typedef struct MiniMidi_Event_List
+typedef struct MM_Event_List
 {   
     size_t length;
     
-    MiniMidi_Event_List_Node *first,
+    MM_Event_List_Node *first,
         *last;
    
-} MiniMidi_Event_List;
+} MM_Event_List;
 
-MiniMidi_Event_List      *MiniMidi_Event_LList_init();
+MM_Event_List      *MM_Event_LList_init();
 
-int MiniMidi_get_events_in_range( MiniMidi_File *self, MiniMidi_Event_List *list, int start_ticks, int end_ticks, int start_note, int end_note );
-void MiniMidi_Event_List__print_to_str( MiniMidi_Event_List *list, char *output );
-// void MiniMidi_Event_to_string_log( MiniMidi_Event *me, char *str );
+int MM_get_events_in_range( MM_File *self, MM_Event_List *list, int start_ticks, int end_ticks, int start_note, int end_note );
+void MM_Event_List__print_to_str( MM_Event_List *list, char *output );
+// void MM_Event_to_string_log( MM_Event *me, char *str );
 
-#endif /* MINIMIDI_H */
+#endif /* MM_H */

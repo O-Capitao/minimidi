@@ -314,7 +314,7 @@ size_t _read_VLQ_delta_t( _Byte *bytes, size_t len, uint64_t *val_ptr)
 *
 *   -> Main Struct Methods
 ****************************************************************************************/
-void _parse_track_events( MiniMidi_Track *track, _Byte *evts_chunk )
+void _parse_track_events( MM_Track *track, _Byte *evts_chunk )
 {
     track->total_ticks = 0;
     
@@ -339,7 +339,7 @@ void _parse_track_events( MiniMidi_Track *track, _Byte *evts_chunk )
 #endif
 
 
-        struct MiniMidi_Event evt;
+        struct MM_Event evt;
 
         evt.next = NULL;
         evt.prev = NULL;
@@ -415,8 +415,8 @@ void _parse_track_events( MiniMidi_Track *track, _Byte *evts_chunk )
 
 
 
-MiniMidi_File* create_mini_midi_file(const char *filepath) {
-    MiniMidi_File *midi_file = malloc(sizeof(MiniMidi_File));
+MM_File* create_mini_midi_file(const char *filepath) {
+    MM_File *midi_file = malloc(sizeof(MM_File));
     if (!midi_file) return NULL;
 
     midi_file->filepath = strdup(filepath);
@@ -426,7 +426,7 @@ MiniMidi_File* create_mini_midi_file(const char *filepath) {
     }
 
     // Allocate and zero-initialize the header
-    midi_file->header = calloc(1, sizeof(MiniMidi_Header));
+    midi_file->header = calloc(1, sizeof(MM_Header));
     if (!midi_file->header) {
         free(midi_file->filepath);
         free(midi_file);
@@ -438,7 +438,7 @@ MiniMidi_File* create_mini_midi_file(const char *filepath) {
     midi_file->header->ntrks = 1;
 
     // Allocate one track
-    midi_file->track = calloc(1, sizeof(MiniMidi_Track));
+    midi_file->track = calloc(1, sizeof(MM_Track));
     if (!midi_file->track) {
         free(midi_file->header);
         free(midi_file->filepath);
@@ -451,15 +451,15 @@ MiniMidi_File* create_mini_midi_file(const char *filepath) {
     return midi_file;
 }
 
-int hook_up_events( MiniMidi_Event *arr, size_t n )
+int hook_up_events( MM_Event *arr, size_t n )
 {
-    sprintf( MiniMidi_Log_log_line, "minimidi.c > hook_up_events() : Entering" );
-    MiniMidi_Log_writeline();
+    sprintf( MM_Log_log_line, "minimidi.c > hook_up_events() : Entering" );
+    MM_Log_writeline();
 
 
 
     int hook_counter = 0;
-    MiniMidi_Event *cursor, *cursor2;
+    MM_Event *cursor, *cursor2;
 
     for (int i = 0; i < n; i++)
     {
@@ -476,8 +476,8 @@ int hook_up_events( MiniMidi_Event *arr, size_t n )
                 cursor2 = &(arr[j]);
                 if ( cursor2->status_code == MIDI_NOTE_OFF && _compare_MidiNote( &(cursor->note), &(cursor2->note) ))
                 {
-                    sprintf( MiniMidi_Log_log_line, "minimidi.c > hook_up_events() > hooking up %i to %i ", i, j );
-                    MiniMidi_Log_writeline();
+                    sprintf( MM_Log_log_line, "minimidi.c > hook_up_events() > hooking up %i to %i ", i, j );
+                    MM_Log_writeline();
                     
                     hook_counter++;
                     cursor->next = cursor2;
@@ -493,10 +493,10 @@ int hook_up_events( MiniMidi_Event *arr, size_t n )
 }
 
 // "Class" Methods
-MiniMidi_Header *_midi_header_read( _Byte *file_contents )
+MM_Header *_midi_header_read( _Byte *file_contents )
 {
 
-    MiniMidi_Header *retval = (MiniMidi_Header*)malloc( sizeof( struct MiniMidi_Header ) );
+    MM_Header *retval = (MM_Header*)malloc( sizeof( struct MM_Header ) );
     if (!retval) return NULL; 
     
     uint32_t aux_for_chunk_size;
@@ -513,9 +513,9 @@ MiniMidi_Header *_midi_header_read( _Byte *file_contents )
 
 
 
-MiniMidi_Track *MiniMidi_Track_read( _Byte *file_content, size_t start_index, size_t total_chunk_len )
+MM_Track *MM_Track_read( _Byte *file_content, size_t start_index, size_t total_chunk_len )
 {
-    MiniMidi_Track *track = (MiniMidi_Track*)malloc( sizeof( struct MiniMidi_Track ) );
+    MM_Track *track = (MM_Track*)malloc( sizeof( struct MM_Track ) );
     _Byte _track_bin_data[ total_chunk_len ];
 
     if (!track) return NULL; 
@@ -528,7 +528,7 @@ MiniMidi_Track *MiniMidi_Track_read( _Byte *file_content, size_t start_index, si
 
     // ESTIMATE: each event is minimum 3 bytes.
     size_t max_events = track->length / 3;
-    track->event_arr = (MiniMidi_Event*)malloc( max_events * sizeof( MiniMidi_Event ) );
+    track->event_arr = (MM_Event*)malloc( max_events * sizeof( MM_Event ) );
 
     _extract_number_from_byte_array( &(track->length), file_content, start_index + 4, 4 );
     _get_substring(file_content, _track_bin_data, start_index + 8, track->length, false );
@@ -544,7 +544,7 @@ MiniMidi_Track *MiniMidi_Track_read( _Byte *file_content, size_t start_index, si
 
 
 
-void MiniMidi_Header_print( MiniMidi_Header *mh )
+void MM_Header_print( MM_Header *mh )
 {
     printf(BOLDWHITE "HEADER:\n---------------------------\n" RESET);
     printf(TAB WHITE "Chunk Size:" RESET BOLDWHITE " %zu" RESET " bytes\n", mh->length );
@@ -554,7 +554,7 @@ void MiniMidi_Header_print( MiniMidi_Header *mh )
     printf("---------------------------\n");
 }
 
-void MiniMidi_Event_print( MiniMidi_Event *me )
+void MM_Event_print( MM_Event *me )
 {
     printf(TAB TAB "Event:\n");
     printf(TAB TAB "Delta: %lu ticks\n", me->delta_ticks );
@@ -630,7 +630,7 @@ void _midi_status_code_to_str( MidiStatusCode status, char* str )
 }
 
 
-void MiniMidi_Event_to_string_log( int index, MiniMidi_Event *me, char *str )
+void MM_Event_to_string_log( int index, MM_Event *me, char *str )
 {
     char aux_str[16]; // for status code translation
     char note_str[8];
@@ -644,21 +644,21 @@ void MiniMidi_Event_to_string_log( int index, MiniMidi_Event *me, char *str )
 
 
 
-void MiniMidi_Track_print( MiniMidi_Track *mt )
+void MM_Track_print( MM_Track *mt )
 {
     printf( BOLDWHITE "TRACK:" RESET "\n---------------------------\n");
     printf( TAB WHITE "Chunk Size:" RESET BOLDWHITE" %li" RESET " bytes\n", mt->length );
     printf( TAB WHITE "Number of Events: %li \n" RESET, mt->n_events );
 
     for (int i = 0; i < mt->n_events; i++ ){
-        MiniMidi_Event_print( &(mt->event_arr[i]) );
+        MM_Event_print( &(mt->event_arr[i]) );
     }
 
     printf("---------------------------\n");
     
 }
 
-void MiniMidi_File_free( MiniMidi_File *self )
+void MM_File_free( MM_File *self )
 {
     if (!self) return;
 
@@ -676,15 +676,15 @@ void MiniMidi_File_free( MiniMidi_File *self )
     free(self);
 }
 
-void MiniMidi_File_print( MiniMidi_File *file )
+void MM_File_print( MM_File *file )
 {
-    MiniMidi_Header_print( file->header );
-    MiniMidi_Track_print( file->track );
+    MM_Header_print( file->header );
+    MM_Track_print( file->track );
 }
 
-MiniMidi_File * MiniMidi_File_init( char *file_path )
+MM_File * MM_File_init( char *file_path )
 {
-    MiniMidi_File *retval = create_mini_midi_file( file_path );
+    MM_File *retval = create_mini_midi_file( file_path );
     
     if (!retval) return NULL; 
 
@@ -716,7 +716,7 @@ MiniMidi_File * MiniMidi_File_init( char *file_path )
 
     retval->length = length;
     retval->header = _midi_header_read( buffer );
-    retval->track = MiniMidi_Track_read( buffer, 14, length );
+    retval->track = MM_Track_read( buffer, 14, length );
     retval->track->total_beats = (retval->track->total_ticks / retval->header->ppqn) + 1;
     
     free( buffer );
@@ -724,34 +724,34 @@ MiniMidi_File * MiniMidi_File_init( char *file_path )
     // logging
     char note_name[5];
     
-    sprintf( MiniMidi_Log_log_line, 
-        "MiniMidi_File : parsed %s : %ld bytes, got %ld events.",
+    sprintf( MM_Log_log_line, 
+        "MM_File : parsed %s : %ld bytes, got %ld events.",
         file_path,
         retval->track->length,
         retval->track->n_events );
 
-    MiniMidi_Log_writeline();
+    MM_Log_writeline();
 
     // log header info
-    sprintf( MiniMidi_Log_log_line,
-        "MiniMidi_Header: Chunk Size: %zu, PPQN: %i.",
+    sprintf( MM_Log_log_line,
+        "MM_Header: Chunk Size: %zu, PPQN: %i.",
         retval->header->length,
         retval->header->ppqn );
 
-    MiniMidi_Log_writeline();
+    MM_Log_writeline();
 
     for (int i = 0; i < retval->track->n_events; i++ )
     {
         // parse note name:
         _midi_note_to_str( retval->track->event_arr[i].note , note_name);
 
-        sprintf( MiniMidi_Log_log_line, 
-            "MiniMidi_Track: Evt: %i, at (ticks=%li, note=%s)",
+        sprintf( MM_Log_log_line, 
+            "MM_Track: Evt: %i, at (ticks=%li, note=%s)",
             i,
             retval->track->event_arr[i].abs_ticks,
             note_name );
 
-        MiniMidi_Log_writeline();
+        MM_Log_writeline();
     }
 
     return retval;
@@ -759,14 +759,14 @@ MiniMidi_File * MiniMidi_File_init( char *file_path )
 
 // TODO:
 // make this real
-int MiniMidi_File_get_bpm( MiniMidi_File *f ){
+int MM_File_get_bpm( MM_File *f ){
     return 120;
 }
 
 
-MiniMidi_Event_List *MiniMidi_Event_LList_init()
+MM_Event_List *MM_Event_LList_init()
 {
-    MiniMidi_Event_List *self = (MiniMidi_Event_List *)malloc(sizeof( MiniMidi_Event_List ));
+    MM_Event_List *self = (MM_Event_List *)malloc(sizeof( MM_Event_List ));
     self->length = 0;
     self->first = NULL;
     self->last = NULL;
@@ -776,36 +776,36 @@ MiniMidi_Event_List *MiniMidi_Event_LList_init()
 
 
 // Kenny Loggings
-void __dump_list_to_log(MiniMidi_File *f, MiniMidi_Event_List *l) {
+void __dump_list_to_log(MM_File *f, MM_Event_List *l) {
 
     int e_counter = 0;
 
-    // sprintf( MiniMidi_Log_log_line, "------------ Dumping contents of MiniMidi_Event_List.");
-    // MiniMidi_Log_writeline();
+    // sprintf( MM_Log_log_line, "------------ Dumping contents of MM_Event_List.");
+    // MM_Log_writeline();
     
-    MiniMidi_Event_List_Node *cursor = l->first;
+    MM_Event_List_Node *cursor = l->first;
 
     while (cursor) {
 
-        // sprintf( MiniMidi_Log_log_line, "At index %i, beat = %li:", e_counter, cursor->value->abs_ticks/f->header->ppqn);
-        // MiniMidi_Log_writeline();
+        // sprintf( MM_Log_log_line, "At index %i, beat = %li:", e_counter, cursor->value->abs_ticks/f->header->ppqn);
+        // MM_Log_writeline();
 
-        MiniMidi_Event_to_string_log( e_counter, cursor->value, MiniMidi_Log_log_line );
-        MiniMidi_Log_writeline();
+        MM_Event_to_string_log( e_counter, cursor->value, MM_Log_log_line );
+        MM_Log_writeline();
 
         cursor = cursor->next;
         e_counter++;
     }
 
-    sprintf( MiniMidi_Log_log_line, "minimidi.c > MiniMidi_Event_List > init : Done initing with %i events.", e_counter );
-    MiniMidi_Log_writeline();
+    sprintf( MM_Log_log_line, "minimidi.c > MM_Event_List > init : Done initing with %i events.", e_counter );
+    MM_Log_writeline();
 }
 
 
-int MiniMidi_Event_List_append(MiniMidi_Event_List*self, MiniMidi_Event *v)
+int MM_Event_List_append(MM_Event_List*self, MM_Event *v)
 {
-    MiniMidi_Event_List_Node *node = (MiniMidi_Event_List_Node *)malloc(sizeof( MiniMidi_Event_List_Node ));
-    MiniMidi_Event_List_Node *aux = 0;
+    MM_Event_List_Node *node = (MM_Event_List_Node *)malloc(sizeof( MM_Event_List_Node ));
+    MM_Event_List_Node *aux = 0;
 
     node->next = NULL;
     node->value = v;
@@ -832,7 +832,7 @@ int MiniMidi_Event_List_append(MiniMidi_Event_List*self, MiniMidi_Event *v)
     return 0;
 }
 
-void _recurse_and_destroy( MiniMidi_Event_List_Node *node)
+void _recurse_and_destroy( MM_Event_List_Node *node)
 {
     if (node->next)
     {
@@ -841,7 +841,7 @@ void _recurse_and_destroy( MiniMidi_Event_List_Node *node)
     free(node);
 }
 
-int _emptyList( MiniMidi_Event_List* self )
+int _emptyList( MM_Event_List* self )
 {
     if (self->first)
         _recurse_and_destroy(self->first);
@@ -856,17 +856,17 @@ int _emptyList( MiniMidi_Event_List* self )
 /**
  * Public again
  */
-int MiniMidi_Event_List_destroy(MiniMidi_Event_List*self)
+int MM_Event_List_destroy(MM_Event_List*self)
 {
     _emptyList( self );
     free(self);
     return 0;
 }
 
-int MiniMidi_get_events_in_range( MiniMidi_File *self,  MiniMidi_Event_List *list, int start_ticks, int end_ticks, int start_note, int end_note )
+int MM_get_events_in_range( MM_File *self,  MM_Event_List *list, int start_ticks, int end_ticks, int start_note, int end_note )
 {
     _emptyList(list);
-    MiniMidi_Event *evt;
+    MM_Event *evt;
 
     for (int i = 0; i < self->track->n_events; i++ )
     {
@@ -875,7 +875,7 @@ int MiniMidi_get_events_in_range( MiniMidi_File *self,  MiniMidi_Event_List *lis
         if ( evt->abs_ticks >= start_ticks && evt->abs_ticks <= end_ticks 
             && _midi_note_to_int( &(evt->note) ) >= start_note && _midi_note_to_int( &(evt->note) ) <= end_note )
         {
-            MiniMidi_Event_List_append(list, evt);
+            MM_Event_List_append(list, evt);
         }
     }
 

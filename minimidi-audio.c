@@ -5,7 +5,7 @@
 #include <stdlib.h>
 
 #define PI 3.14159265358979323846
-#define BUFFER_SIZE 512
+#define BUFFER_SIZE 4096
 
 // note_i is the number of the note, starting from C0
 double _calc_tempered_freq( int note_i ){
@@ -19,25 +19,25 @@ static int paStreamCallback( const void *inputBuffer,
                             PaStreamCallbackFlags statusFlags,
                             void *_my_data ){
 
-    // MiniMidi_Ring_Buffer *rb = (MiniMidi_Ring_Buffer*)_my_data;
+    // MM_Ring_Buffer *rb = (MM_Ring_Buffer*)_my_data;
     MM_Ring_Buffer *rb = (MM_Ring_Buffer *)_my_data;
     float *out = (float*)outputBuffer;
     (void) inputBuffer;
 
-    sprintf(MiniMidi_Log_log_line, "callback");
-    MiniMidi_Log_writeline();
+    sprintf(MM_Log_log_line, "callback");
+    MM_Log_writeline();
 
     MM_Ring_Buffer__pop_n( rb , out, frames_per_buffer );
 
     return 0;
 }
 
-MiniMidi_Synth *MiniMidi_Synth_init( MiniMidi_Event *track_events ){
+MM_Synth *MM_Synth_init( MM_Event *track_events ){
 
-    sprintf( MiniMidi_Log_log_line, "minimidi-audio.c > MiniMidi_Synth_init : entering.");
-    MiniMidi_Log_writeline();
+    sprintf( MM_Log_log_line, "minimidi-audio.c > MM_Synth_init : entering.");
+    MM_Log_writeline();
 
-    MiniMidi_Synth* s = (MiniMidi_Synth*)malloc(sizeof(MiniMidi_Synth));
+    MM_Synth* s = (MM_Synth*)malloc(sizeof(MM_Synth));
 
     // init memory
     s->n_oscilators = 1;
@@ -89,16 +89,17 @@ MiniMidi_Synth *MiniMidi_Synth_init( MiniMidi_Event *track_events ){
     }
 
     s->midi_evts_arr = track_events;
+    s->is_playing = false;
 
-    sprintf( MiniMidi_Log_log_line, "minimidi-audio.c > MiniMidi_Synth_init : exiting.");
-    MiniMidi_Log_writeline();
+    sprintf( MM_Log_log_line, "minimidi-audio.c > MM_Synth_init : exiting.");
+    MM_Log_writeline();
 
     return s;
 }
 
 
 
-int MiniMidi_Synth_destroy( MiniMidi_Synth *s ){
+int MM_Synth_destroy( MM_Synth *s ){
     
     // todo: reenable after start / stop logic is in
     PaError e = Pa_StopStream(s->pa_stream);
@@ -120,42 +121,47 @@ int MiniMidi_Synth_destroy( MiniMidi_Synth *s ){
 }
 
 float _produce_val( float t ){
-    
     float freq = 440 * 2;
     float period = 1 / freq;
     float t_in_period = fmodf( t, period ); 
 
     return t_in_period / period > 0.5 ? 0 : 0.3333;
 }
-// start from the current time, produce until whenever 
-int _produce_values( MiniMidi_Synth *s, size_t n_to_produce, float *output_arr ){
+// fill the output_arr with zeros
+//
+int _produce_values( MM_Synth *s, size_t n_to_produce, float *output_arr ){
+
     for (size_t i = 0; i < n_to_produce; i++){
-        output_arr[i] = _produce_val( s->current_processing_time );
-        s->current_processing_time += s->delta_t;
-    }
-    return 0;
-}
-
-int MiniMidi_Synth_step( MiniMidi_Synth *s ){
-    size_t _space_in_buffer = MM_Ring_Buffer__get_free_space( s->rb );
-    sprintf(MiniMidi_Log_log_line, "minimidi-audio.c > MiniMidi_Synth_step > entering, free space is %li", _space_in_buffer);
-    MiniMidi_Log_writeline();
-
-    if (_space_in_buffer > BUFFER_SIZE / 2){
-
-        if (_space_in_buffer > BUFFER_SIZE){
-            sprintf(MiniMidi_Log_log_line, "minimidi-audio.c > MiniMidi_Synth_step > oops");
-            MiniMidi_Log_writeline();
+        if (s->is_playing){
+            output_arr[i] = _produce_val( s->current_processing_time );
+            s->current_processing_time += s->delta_t;
+        } else {
+            output_arr[i] = 0;
         }
-        // EXPENSIVE!
-        float lilbuff[_space_in_buffer];
-        _produce_values( s, _space_in_buffer, lilbuff );
-        MM_Ring_Buffer__push_n(s->rb, lilbuff, _space_in_buffer);
+    }
+    return 0;
+}
+
+// aux
+float _SYNTH_BUFFER[BUFFER_SIZE];
+
+int MM_Synth_step( MM_Synth *s ){
+
+    size_t _space_in_buffer = MM_Ring_Buffer__get_free_space( s->rb );
+    sprintf(MM_Log_log_line, "minimidi-audio.c > MM_Synth_step > entering, free space is %li", _space_in_buffer);
+    MM_Log_writeline();
+
+    if (_space_in_buffer > BUFFER_SIZE / 3){
         
-        sprintf(MiniMidi_Log_log_line, "minimidi-audio.c > MiniMidi_Synth_step > dumping into ring buffer");
-        MiniMidi_Log_writeline();
+        // catch stupid errors
+        if (_space_in_buffer > BUFFER_SIZE){
+            sprintf(MM_Log_log_line, "minimidi-audio.c > MM_Synth_step > oops");
+            MM_Log_writeline();
+        }
+        _produce_values( s, _space_in_buffer, _SYNTH_BUFFER );
+
+        MM_Ring_Buffer__push_n(s->rb, _SYNTH_BUFFER, _space_in_buffer);
     }
 
     return 0;
 }
-

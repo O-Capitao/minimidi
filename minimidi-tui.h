@@ -1,5 +1,5 @@
-#ifndef MINIMIDI_TUI_H
-#define MINIMIDI_TUI_H
+#ifndef MM_TUI_H
+#define MM_TUI_H
 
 #include <ncurses.h>
 #include <stdbool.h>
@@ -19,7 +19,7 @@
 *   logical coords:  {beats, semitones}
 *   terminal coords: {cols, lines}
 */
-typedef struct MiniMidi_TUI
+typedef struct MM_TUI
 {
     int ticks_per_col,      // zoom lvl
         beats_in_bar,       // time sig
@@ -29,9 +29,10 @@ typedef struct MiniMidi_TUI
         outer_size[2],      // terminal size
         move_increment;     // how many ticks are moved by a press of <- or ->
 
-    bool is_dirty,
-        is_running,
-        is_playing;
+    bool is_dirty,           // is state changed?
+        is_running,          // is program running or has the user quit?
+        is_playing,          // is playback and continuous scroll happening?
+        is_render_requested; // if not playing, is it necessary to re-render?
 
     int bpm;
 
@@ -49,31 +50,31 @@ typedef struct MiniMidi_TUI
     int _cursor_position_ticks;
 
     // opened midi file
-    MiniMidi_File *file;
+    MM_File *file;
     
     // list with events that should be drawn to current grid
-    MiniMidi_Event_List *midi_events_list;
+    MM_Event_List *midi_events_list;
 
     // buffer of midievents
     size_t evts_in_buffer;
-    MiniMidi_Event evt_buffer[CMD_BUFFER_SIZE];
+    MM_Event evt_buffer[CMD_BUFFER_SIZE];
 
     // derwin pointer -> Grid Area
     WINDOW *grid_derwin;
     WINDOW *playback_derwin;
 
     // playback
-    MiniMidi_Synth *synth;
+    MM_Synth *synth;
 
-} MiniMidi_TUI;
+} MM_TUI;
 
 /***
  *  "class" methods:
  */
 
 // init all ncurses, sizes, load file, context
-int MiniMidi_TUI_init( MiniMidi_TUI *self, MiniMidi_File *file );
-int MiniMidi_TUI_step( MiniMidi_TUI *self );
-int MiniMidi_TUI_destroy( MiniMidi_TUI *self );
+int MM_TUI_init( MM_TUI *self, MM_File *file );
+int MM_TUI_step( MM_TUI *self );
+int MM_TUI_destroy( MM_TUI *self );
 
-#endif /* MINIMIDI_TUI_H */
+#endif /* MM_TUI_H */
