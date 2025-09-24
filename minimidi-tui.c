@@ -81,7 +81,16 @@ int _update_sizes( MM_TUI *self )
 
     // sprintf( MM_Log_log_line, "minimidi-tui.c > _update_sizes() : set increment to %i", self->move_increment );
     // MM_Log_writeline();
-    self->is_render_requested = true;
+    if (self->is_playing){
+        self->_cursor_position_ticks += self->delta_ticks;
+        // move the screen if needed
+        if ( self->_cursor_position_ticks >= self->logical_start[0] + self->logical_size[0] / 2 ){
+            self->logical_start[0] += self->delta_ticks;
+        }
+    } else {
+        self->is_render_requested = true;
+    }
+    
 
     return 0;
 }
@@ -532,10 +541,6 @@ int _render_playback( MM_TUI *self ){
     return 0;
 }
 
-int _calc_ui_framerate(int bpm){
-    return bpm / 60;
-}
-
 /******
  *   120     ->    60 * 1000
  *   beat ->     x
@@ -618,13 +623,48 @@ int MM_TUI_init( MM_TUI *self, MM_File *file )
     return 0;
 }
 
+int MM_TUI_render(MM_TUI *s ){
 
+    if (s->is_playing || s->is_render_requested){
+        clear();
+        if (_render_info( s )) {
+            return 1;
+        }
+        if (_render_note_labels( s )) {
+            return 1;
+        }
+        if (_render_grid( s )) {
+            return 1;
+        }
+        if (_render_midi( s )) {
+            return 1;
+        }
+    
+        if (s->is_playing){
+            // show a lil panel with a clock running
+            if (_render_playback( s )) {
+                return 1;
+            }
+
+            box( s->grid_derwin, '|', '=' );
+
+            wrefresh( stdscr );
+            wrefresh( s->grid_derwin );
+        }
+    }
+
+    return 0;
+}
 
 int MM_TUI_step( MM_TUI *self ){
 
-    static clock_t step_start, ellapsed;
-    static int _debug_step_cntr;
+    clock_t step_start, step_end;
+    double ellapsed;
 
+    static int _debug_step_cntr;
+    step_start = clock();
+    
+    
     if (_debug_step_cntr++ == 5){
         _debug_step_cntr = 0;
 
@@ -636,62 +676,30 @@ int MM_TUI_step( MM_TUI *self ){
 
     }
 
-    step_start = clock();
-
-    if (self->is_playing || self->is_render_requested){
-        clear();
-        
-        if (_render_info( self )) {
-            return 1;
-        }
-        if (_render_note_labels( self )) {
-            return 1;
-        }
-        if (_render_grid( self )) {
-            return 1;
-        }
-        if (_render_midi( self )) {
-            return 1;
-        }
-        self->is_render_requested = false;
-        
-        if (self->is_playing){
-            // show a lil panel with a clock running
-            if (_render_playback( self )) return 1;
-
-            box( self->grid_derwin, '|', '=' );
-
-            wrefresh( stdscr );
-            wrefresh( self->grid_derwin );
-
-            
-        }
-    
-    }
-
     // get input
     _handle_input(self);
     _update_sizes( self );
+    MM_TUI_render(self);
 
-    if (self->is_playing){
-        self->_cursor_position_ticks += self->delta_ticks;
-        
-        // move the screen if needed
-        if ( self->_cursor_position_ticks >= self->logical_start[0] + self->logical_size[0] / 2 ){
-            self->logical_start[0] += self->delta_ticks;
-        }
-        
-    }
+
     // set synth state
     self->synth->is_playing = self->is_playing;
     self->playback_time += self->delta_t_ms;
+    
     // step Synth
     MM_Synth_step(self->synth);
 
     // sleep until next step
-    ellapsed = (clock() - step_start) * 1000 / CLOCKS_PER_SEC;
-    usleep( (self->delta_t_ms - ellapsed) * 1000 );
+    step_end = clock();
+    ellapsed = (double)(step_end - step_start) * 1000 / CLOCKS_PER_SEC;
+    
+    if (_debug_step_cntr == 5){
+        sprintf( MM_Log_log_line, "minimidi-tui.c > MM_TUI_step() : step logic took %f ms.", 
+            ellapsed);
+        MM_Log_writeline();     
+    }
 
+    usleep( (self->delta_t_ms - ellapsed) * 1000 );
     return 0;
 }
 

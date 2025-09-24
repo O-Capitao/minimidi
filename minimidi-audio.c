@@ -24,8 +24,8 @@ static int paStreamCallback( const void *inputBuffer,
     float *out = (float*)outputBuffer;
     (void) inputBuffer;
 
-    sprintf(MM_Log_log_line, "callback");
-    MM_Log_writeline();
+    // sprintf(MM_Log_log_line, "callback");
+    // MM_Log_writeline();
 
     MM_Ring_Buffer__pop_n( rb , out, frames_per_buffer );
 
@@ -41,8 +41,8 @@ MM_Synth *MM_Synth_init( MM_Event *track_events ){
 
     // init memory
     s->n_oscilators = 1;
-    s->last_processed_evt_time = s->current_processing_time = 0;
-    s->delta_t = 1 /AUDIO_FRAMERATE;
+    s->t = 0;
+    s->delta_t = 1.00 / (double)AUDIO_FRAMERATE;
     s->rb = MM_Ring_Buffer__init( sizeof(float), BUFFER_SIZE );
 
     // init Portaudio
@@ -120,10 +120,10 @@ int MM_Synth_destroy( MM_Synth *s ){
     return 0; 
 }
 
-float _produce_val( float t ){
-    float freq = 440 * 2;
-    float period = 1 / freq;
-    float t_in_period = fmodf( t, period ); 
+double _produce_val( double t ){
+    double freq = 440;
+    double period = 1.0 / freq;
+    double t_in_period = fmodf( t, period ); 
 
     return t_in_period / period > 0.5 ? 0 : 0.3333;
 }
@@ -133,8 +133,8 @@ int _produce_values( MM_Synth *s, size_t n_to_produce, float *output_arr ){
 
     for (size_t i = 0; i < n_to_produce; i++){
         if (s->is_playing){
-            output_arr[i] = _produce_val( s->current_processing_time );
-            s->current_processing_time += s->delta_t;
+            output_arr[i] = _produce_val( s->t );
+            s->t += s->delta_t;
         } else {
             output_arr[i] = 0;
         }

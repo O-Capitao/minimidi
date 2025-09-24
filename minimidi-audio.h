@@ -13,9 +13,8 @@
 #define DEBUG 0
 
 #define OSCILATORS_MAX 10
-// #define BUFF_SIZE 512
 #define AUDIO_FRAMERATE 44000
-#define N_CHANNELS 2
+#define N_CHANNELS 1
 #define NOTE_RANGE 96
 /***
 *  * MiniMidi Audio
@@ -38,9 +37,10 @@ typedef struct MM_Synth {
     MM_Oscillator oscillators[ OSCILATORS_MAX ];
     int n_oscilators;
     double tempered_freqs[NOTE_RANGE];
-    float last_processed_evt_time,
-        current_processing_time,
-        delta_t;
+
+    // synth time in seconds
+    double t, delta_t;
+
     MM_Ring_Buffer *rb;
     MM_Event *midi_evts_arr;
 

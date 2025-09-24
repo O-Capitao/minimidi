@@ -75,6 +75,7 @@ typedef struct MM_TUI
 // init all ncurses, sizes, load file, context
 int MM_TUI_init( MM_TUI *self, MM_File *file );
 int MM_TUI_step( MM_TUI *self );
+int MM_TUI_render(MM_TUI *self );
 int MM_TUI_destroy( MM_TUI *self );
 
 #endif /* MM_TUI_H */
