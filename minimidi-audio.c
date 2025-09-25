@@ -24,15 +24,12 @@ static int paStreamCallback( const void *inputBuffer,
     float *out = (float*)outputBuffer;
     (void) inputBuffer;
 
-    // sprintf(MM_Log_log_line, "callback");
-    // MM_Log_writeline();
-
     MM_Ring_Buffer__pop_n( rb , out, frames_per_buffer );
 
     return 0;
 }
 
-MM_Synth *MM_Synth_init( MM_Event *track_events ){
+MM_Synth *MM_Synth_init( MM_Event *track_events, size_t total_events ){
 
     sprintf( MM_Log_log_line, "minimidi-audio.c > MM_Synth_init : entering.");
     MM_Log_writeline();
@@ -78,7 +75,6 @@ MM_Synth *MM_Synth_init( MM_Event *track_events ){
     }
 
     // init oscillators
-    // TODO:
     // add multiple oscillator supp.
     for (int i = 0; i < s->n_oscilators; i++){
         s->oscillators[i].amp = 0.5;
@@ -88,8 +84,8 @@ MM_Synth *MM_Synth_init( MM_Event *track_events ){
         s->oscillators[i].dtheta = (2* PI ) / ((float) AUDIO_FRAMERATE);
     }
 
-    s->midi_evts_arr = track_events;
     s->is_playing = false;
+    s->active_note = NULL;
 
     sprintf( MM_Log_log_line, "minimidi-audio.c > MM_Synth_init : exiting.");
     MM_Log_writeline();
@@ -100,7 +96,7 @@ MM_Synth *MM_Synth_init( MM_Event *track_events ){
 
 
 int MM_Synth_destroy( MM_Synth *s ){
-    
+
     // todo: reenable after start / stop logic is in
     PaError e = Pa_StopStream(s->pa_stream);
 
@@ -120,24 +116,26 @@ int MM_Synth_destroy( MM_Synth *s ){
     return 0; 
 }
 
-double _produce_val( double t ){
-    double freq = 440;
-    double period = 1.0 / freq;
-    double t_in_period = fmodf( t, period ); 
+double _produce_val( MM_Synth *s ){
 
-    return t_in_period / period > 0.5 ? 0 : 0.3333;
+    if (s->active_note){
+        double freq = s->tempered_freqs[ 12 * s->active_note->octave + (int)s->active_note->note ];
+        double period = 1.0 / freq;
+        double t_in_period = fmodf( s->t, period ); 
+
+        return t_in_period / period > 0.5 ? 0 : 0.3333;
+    }
+    return 0;
 }
 // fill the output_arr with zeros
 //
 int _produce_values( MM_Synth *s, size_t n_to_produce, float *output_arr ){
 
     for (size_t i = 0; i < n_to_produce; i++){
-        if (s->is_playing){
-            output_arr[i] = _produce_val( s->t );
-            s->t += s->delta_t;
-        } else {
-            output_arr[i] = 0;
-        }
+        output_arr[i] = _produce_val( s );
+
+        // update state
+        s->t += s->delta_t;
     }
     return 0;
 }
@@ -147,6 +145,7 @@ float _SYNTH_BUFFER[BUFFER_SIZE];
 
 int MM_Synth_step( MM_Synth *s ){
 
+    // write to buffer
     size_t _space_in_buffer = MM_Ring_Buffer__get_free_space( s->rb );
     sprintf(MM_Log_log_line, "minimidi-audio.c > MM_Synth_step > entering, free space is %li", _space_in_buffer);
     MM_Log_writeline();
@@ -163,5 +162,26 @@ int MM_Synth_step( MM_Synth *s ){
         MM_Ring_Buffer__push_n(s->rb, _SYNTH_BUFFER, _space_in_buffer);
     }
 
+
+
+    return 0;
+}
+
+int MM_Synth_press_key( MM_Synth *s, MidiNote *n ){
+    if (!s->active_note){
+        s->active_note = n;
+        return 0;
+    }
+    if (n->note != s->active_note->note || n->octave != s->active_note->octave ){
+        s->active_note = n;
+    }
+
+    return 0;
+}
+
+int MM_Synth_release_key( MM_Synth *s, MidiNote *n ){
+    // if (n->note == s->active_note->note || n->octave != s->active_note->octave ){
+        s->active_note = NULL;
+    // }
     return 0;
 }

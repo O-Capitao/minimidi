@@ -422,19 +422,19 @@ int _render_midi( MM_TUI *self )
     // sprintf( MM_Log_log_line, "minimidi-tui.c > _render_midi() : Entering" );
     MM_Log_writeline();
 
-    MM_Event_List_Node *cursor;
+    MM_Event_LList_Node *cursor;
     MM_Event *aux;
 
-    MM_get_events_in_range(
+    MM_File_get_events_in_range(
         self->file,
-        self->midi_events_list,
+        self->midi_events_screen_list,
         self->logical_start[0],
         self->logical_start[0] + self->logical_size[0],
         self->logical_start[1],
         self->logical_start[1] + self->logical_size[1]
     );
 
-    cursor = self->midi_events_list->first;
+    cursor = self->midi_events_screen_list->first;
     int cursor_tick, cursor_note, tgt_col, note_line, cursor_tick_aux, tgt_col_aux;
 
     while (cursor)
@@ -581,8 +581,8 @@ int MM_TUI_init( MM_TUI *self, MM_File *file )
 
     //
     self->file = file;
-    self->midi_events_list = MM_Event_LList_init();
-
+    self->midi_events_screen_list = MM_Event_LList_init();
+    self->midi_events_audio_list = MM_Event_LList_init();
     // TODO:
     // what here? display not smooth at lower franerates
     self->fps = 15;
@@ -590,8 +590,6 @@ int MM_TUI_init( MM_TUI *self, MM_File *file )
     // INIT PLAYBACK STUFF
     self->playback_time = 0;
     self->playback_midi_ticks = 0;
-
-
     
     self->playback_end_tick = __calc_end_of_playback(
         self->file->track->total_ticks, 
@@ -601,7 +599,6 @@ int MM_TUI_init( MM_TUI *self, MM_File *file )
     // TODO: make bpm smarter, settable
     // for now: 120 only lol
     self->bpm = 120;
-
     
     self->playback_total_time_ms = _midi_tick_to_ms(
         self->playback_end_tick,
@@ -612,7 +609,6 @@ int MM_TUI_init( MM_TUI *self, MM_File *file )
     self->delta_t_ms = 1000 /  self->fps;
     self->delta_ticks = (1000 * self->bpm * self->file->header->ppqn) / ( 60000 * self->fps );
     self->_cursor_position_ticks = 0;
-    
 
     if ( _init_ncurses(self) ) return 1;
 
@@ -677,16 +673,28 @@ int MM_TUI_step( MM_TUI *self ){
     }
 
     // get input
-    _handle_input(self);
+    _handle_input( self );
     _update_sizes( self );
-    MM_TUI_render(self);
-
+    MM_TUI_render( self );
 
     // set synth state
     self->synth->is_playing = self->is_playing;
     self->playback_time += self->delta_t_ms;
     
     // step Synth
+    MM_File_get_event_at_s( self->file, self->midi_events_audio_list, (double)self->playback_time / 1000.0, (double)self->delta_t_ms / 1000.0 );
+
+    MM_Event_LList_Node *_n = self->midi_events_audio_list->first;
+    // start processing events
+    while (_n ){
+        if (_n->value->status_code == MIDI_NOTE_ON){
+            MM_Synth_press_key( self->synth, &(_n->value->note));
+        } else if (_n->value->status_code == MIDI_NOTE_OFF){
+            MM_Synth_release_key( self->synth, &(_n->value->note));
+        }
+        _n = _n->next;
+    }
+
     MM_Synth_step(self->synth);
 
     // sleep until next step

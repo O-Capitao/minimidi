@@ -53,7 +53,8 @@ typedef struct MM_TUI
     MM_File *file;
     
     // list with events that should be drawn to current grid
-    MM_Event_List *midi_events_list;
+    MM_Event_LList *midi_events_screen_list;
+    MM_Event_LList *midi_events_audio_list;
 
     // buffer of midievents
     size_t evts_in_buffer;
@@ -71,11 +72,9 @@ typedef struct MM_TUI
 /***
  *  "class" methods:
  */
-
-// init all ncurses, sizes, load file, context
-int MM_TUI_init( MM_TUI *self, MM_File *file );
-int MM_TUI_step( MM_TUI *self );
-int MM_TUI_render(MM_TUI *self );
+int MM_TUI_init   ( MM_TUI *self, MM_File *file );
+int MM_TUI_step   ( MM_TUI *self );
+int MM_TUI_render ( MM_TUI *self );
 int MM_TUI_destroy( MM_TUI *self );
 
 #endif /* MM_TUI_H */

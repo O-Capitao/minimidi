@@ -87,6 +87,39 @@ typedef struct MM_Track
                     total_beats;
 } MM_Track;
 
+/****************************************************************************************
+*
+*
+*   -> Aux Data Structures -> For lookup / state edit
+****************************************************************************************/
+typedef struct MM_Event_LList_Node
+{
+    MM_Event *value;
+    
+    struct MM_Event_LList_Node *next;
+
+} MM_Event_LList_Node;
+
+typedef struct MM_Event_LList
+{   
+    size_t length;
+    
+    MM_Event_LList_Node *first,
+        *last;
+   
+} MM_Event_LList;
+
+MM_Event_LList *MM_Event_LList_init         ();
+int             MM_Event_LList_destroy      ( MM_Event_LList *self );
+
+int             MM_Event_LList_from_array   ( MM_Event_LList *list, MM_Event *array, size_t n_events );
+void            MM_Event_LList__print_to_str( MM_Event_LList *list, char *output );
+// void MM_Event_to_string_log( MM_Event *me, char *str );
+
+
+
+
+
 
 
 /****************************************************************************************
@@ -96,45 +129,19 @@ typedef struct MM_Track
 ****************************************************************************************/
 typedef struct MM_File
 {
-    char                 *filepath;
-    MM_Header      *header;
-    MM_Track       *track;
-    size_t               length;
+    char            *filepath;
+    MM_Header       *header;
+    MM_Track        *track;
+    unsigned short   bpm;
+    size_t           length;
+    MM_Event_LList  *events;
 
 } MM_File;
 
-MM_File       *MM_File_init( char *file_path );
-// void                MM_File_print( MM_File *file );
-void                MM_File_free( MM_File *file );
-int                 MM_File_get_bpm( MM_File *file );
-
-
-/****************************************************************************************
-*
-*
-*   -> Aux Data Structures -> For lookup / state edit
-****************************************************************************************/
-typedef struct MM_Event_List_Node
-{
-    MM_Event *value;
-    
-    struct MM_Event_List_Node *next;
-
-} MM_Event_List_Node;
-
-typedef struct MM_Event_List
-{   
-    size_t length;
-    
-    MM_Event_List_Node *first,
-        *last;
-   
-} MM_Event_List;
-
-MM_Event_List      *MM_Event_LList_init();
-
-int MM_get_events_in_range( MM_File *self, MM_Event_List *list, int start_ticks, int end_ticks, int start_note, int end_note );
-void MM_Event_List__print_to_str( MM_Event_List *list, char *output );
-// void MM_Event_to_string_log( MM_Event *me, char *str );
+MM_File       *MM_File_init                 ( char *file_path );
+void           MM_File_free                 ( MM_File *file );
+unsigned short MM_File_get_bpm              ( MM_File *file );
+int            MM_File_get_event_at_s       ( MM_File *file, MM_Event_LList *container, double s, double delta_t );
+int            MM_File_get_events_in_range  ( MM_File *file, MM_Event_LList *list, int start_ticks, int end_ticks, int start_note, int end_note );
 
 #endif /* MM_H */

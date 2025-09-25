@@ -16,6 +16,7 @@
 #define AUDIO_FRAMERATE 44000
 #define N_CHANNELS 1
 #define NOTE_RANGE 96
+#define MAX_SIMULT_MIDI_EVENTS 3
 /***
 *  * MiniMidi Audio
 * 
@@ -37,22 +38,22 @@ typedef struct MM_Synth {
     MM_Oscillator oscillators[ OSCILATORS_MAX ];
     int n_oscilators;
     double tempered_freqs[NOTE_RANGE];
-
+    
     // synth time in seconds
     double t, delta_t;
 
     MM_Ring_Buffer *rb;
-    MM_Event *midi_evts_arr;
-
     PaStream *pa_stream;
+    MidiNote *active_note;
 
     bool is_playing;
+
 } MM_Synth;
 
-MM_Synth *MM_Synth_init( MM_Event *track_events );
-int MM_Synth_destroy( MM_Synth *self );
-int MM_Synth_step( MM_Synth *self );
-// int MM_Synth_play( MM_Synth *self );
-// int MM_Synth_stop( MM_Synth *self );
+MM_Synth *MM_Synth_init         ();
+int       MM_Synth_destroy      ( MM_Synth *self );
+int       MM_Synth_press_key    ( MM_Synth *s, MidiNote *n );
+int       MM_Synth_release_key  ( MM_Synth *s, MidiNote *n );
+int       MM_Synth_step         ( MM_Synth *self );
 
 #endif // MM_TUI_AUDIO

@@ -2,6 +2,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <math.h>
 
 #include "minimidi.h"
 
@@ -753,20 +754,34 @@ MM_File * MM_File_init( char *file_path )
 
         MM_Log_writeline();
     }
+    retval->bpm = 120;
+
+    retval->events = MM_Event_LList_init();
+    MM_Event_LList_from_array( retval->events, retval->track->event_arr, retval->track->n_events );
 
     return retval;
 }
 
-// TODO:
-// make this real
-int MM_File_get_bpm( MM_File *f ){
-    return 120;
+unsigned short MM_File_get_bpm( MM_File *f ){
+    return f->bpm;
 }
 
+size_t _sec_to_ticks( MM_File *f, double s ){
+    return (size_t)round(s * round( (double)(f->bpm) / 60.0 ) * (double)f->header->ppqn);    
+}
 
-MM_Event_List *MM_Event_LList_init()
+int MM_File_get_event_at_s( MM_File *file, MM_Event_LList *container, double s, double delta_t ){
+
+    size_t _tick_start = _sec_to_ticks( file, s );
+    size_t _tick_end = _tick_start + _sec_to_ticks( file, delta_t );
+
+    MM_File_get_events_in_range(file, container, _tick_start, _tick_end, 0, 96 );
+    return 0;
+}
+
+MM_Event_LList *MM_Event_LList_init()
 {
-    MM_Event_List *self = (MM_Event_List *)malloc(sizeof( MM_Event_List ));
+    MM_Event_LList *self = (MM_Event_LList *)malloc(sizeof( MM_Event_LList ));
     self->length = 0;
     self->first = NULL;
     self->last = NULL;
@@ -776,19 +791,12 @@ MM_Event_List *MM_Event_LList_init()
 
 
 // Kenny Loggings
-void __dump_list_to_log(MM_File *f, MM_Event_List *l) {
+void __dump_list_to_log(MM_File *f, MM_Event_LList *l) {
 
     int e_counter = 0;
-
-    // sprintf( MM_Log_log_line, "------------ Dumping contents of MM_Event_List.");
-    // MM_Log_writeline();
-    
-    MM_Event_List_Node *cursor = l->first;
+    MM_Event_LList_Node *cursor = l->first;
 
     while (cursor) {
-
-        // sprintf( MM_Log_log_line, "At index %i, beat = %li:", e_counter, cursor->value->abs_ticks/f->header->ppqn);
-        // MM_Log_writeline();
 
         MM_Event_to_string_log( e_counter, cursor->value, MM_Log_log_line );
         MM_Log_writeline();
@@ -797,24 +805,22 @@ void __dump_list_to_log(MM_File *f, MM_Event_List *l) {
         e_counter++;
     }
 
-    sprintf( MM_Log_log_line, "minimidi.c > MM_Event_List > init : Done initing with %i events.", e_counter );
+    sprintf( MM_Log_log_line, "minimidi.c > MM_Event_LList > init : Done initing with %i events.", e_counter );
     MM_Log_writeline();
 }
 
 
-int MM_Event_List_append(MM_Event_List*self, MM_Event *v)
+int MM_Event_LList_append(MM_Event_LList*self, MM_Event *v)
 {
-    MM_Event_List_Node *node = (MM_Event_List_Node *)malloc(sizeof( MM_Event_List_Node ));
-    MM_Event_List_Node *aux = 0;
+    MM_Event_LList_Node *node = (MM_Event_LList_Node *)malloc(sizeof( MM_Event_LList_Node ));
+    MM_Event_LList_Node *aux = 0;
 
     node->next = NULL;
     node->value = v;
 
-
     // list is empty
     if (!self->first)
     {
-
         self->last = node;
         self->first = node;
         node->next = NULL;
@@ -824,15 +830,13 @@ int MM_Event_List_append(MM_Event_List*self, MM_Event *v)
         aux = self->last;
         self->last = node;
         aux->next = node;
-
     }
 
     self->length++;
-
     return 0;
 }
 
-void _recurse_and_destroy( MM_Event_List_Node *node)
+void _recurse_and_destroy( MM_Event_LList_Node *node)
 {
     if (node->next)
     {
@@ -841,7 +845,7 @@ void _recurse_and_destroy( MM_Event_List_Node *node)
     free(node);
 }
 
-int _emptyList( MM_Event_List* self )
+int _emptyList( MM_Event_LList* self )
 {
     if (self->first)
         _recurse_and_destroy(self->first);
@@ -856,14 +860,14 @@ int _emptyList( MM_Event_List* self )
 /**
  * Public again
  */
-int MM_Event_List_destroy(MM_Event_List*self)
+int MM_Event_LList_destroy(MM_Event_LList*self)
 {
     _emptyList( self );
     free(self);
     return 0;
 }
 
-int MM_get_events_in_range( MM_File *self,  MM_Event_List *list, int start_ticks, int end_ticks, int start_note, int end_note )
+int MM_File_get_events_in_range( MM_File *self,  MM_Event_LList *list, int start_ticks, int end_ticks, int start_note, int end_note )
 {
     _emptyList(list);
     MM_Event *evt;
@@ -875,11 +879,23 @@ int MM_get_events_in_range( MM_File *self,  MM_Event_List *list, int start_ticks
         if ( evt->abs_ticks >= start_ticks && evt->abs_ticks <= end_ticks 
             && _midi_note_to_int( &(evt->note) ) >= start_note && _midi_note_to_int( &(evt->note) ) <= end_note )
         {
-            MM_Event_List_append(list, evt);
+            MM_Event_LList_append(list, evt);
         }
     }
-
-    // __dump_list_to_log( self, list);
     
     return 0;
 }
+
+int MM_Event_LList_from_array( MM_Event_LList *list, MM_Event *array, size_t n_events ){
+    int err = 0;
+    for (int i = 0; i < n_events; i++){
+        err = MM_Event_LList_append(list, array + i);
+        if (err){
+            sprintf( MM_Log_log_line, "MM_Event_LList_from_array. err@ %i", i);
+            MM_Log_writeline();
+            return err;
+        }
+    }
+    return 0;
+}
+
