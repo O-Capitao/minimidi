@@ -8,7 +8,7 @@ SOURCES = $(wildcard *.c) $(wildcard */*.c)
 
 OBJS = $(wildcard *.o) $(wildcard */*.o)
 
-OUTPUTFILE=minimidi.a
+OUTPUTFILE=minimidi
 
 NOW := $(shell date +"%c" | tr ' :' '__')
 

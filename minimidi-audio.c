@@ -40,7 +40,7 @@ MM_Synth *MM_Synth_init( MM_Event *track_events, size_t total_events ){
     s->n_oscilators = 1;
     s->t = 0;
     s->delta_t = 1.00 / (double)AUDIO_FRAMERATE;
-    s->rb = MM_Ring_Buffer__init( sizeof(float), BUFFER_SIZE );
+    s->rb = MM_Ring_Buffer__init( BUFFER_SIZE );
 
     // init Portaudio
     if ( Pa_Initialize() != paNoError){    
@@ -146,7 +146,7 @@ float _SYNTH_BUFFER[BUFFER_SIZE];
 int MM_Synth_step( MM_Synth *s ){
 
     // write to buffer
-    size_t _space_in_buffer = MM_Ring_Buffer__get_free_space( s->rb );
+    size_t _space_in_buffer = MM_Ring_Buffer__count_approx( s->rb );
     sprintf(MM_Log_log_line, "minimidi-audio.c > MM_Synth_step > entering, free space is %li", _space_in_buffer);
     MM_Log_writeline();
 

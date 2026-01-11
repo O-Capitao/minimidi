@@ -7,7 +7,7 @@
 #include <portaudio.h>
 
 #include "minimidi-log.h"
-#include "minimidi-ring-buffer.h"
+#include "minimidi-rb.h"
 #include "minimidi.h"
 
 #define DEBUG 0
