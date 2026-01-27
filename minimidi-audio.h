@@ -37,10 +37,10 @@ typedef struct MM_Synth {
     
     MM_Oscillator oscillators[ OSCILATORS_MAX ];
     int n_oscilators;
-    double tempered_freqs[NOTE_RANGE];
+    float tempered_freqs[NOTE_RANGE];
     
     // synth time in seconds
-    double t, delta_t;
+    float t, delta_t;
 
     MM_Ring_Buffer *rb;
     PaStream *pa_stream;

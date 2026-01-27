@@ -477,9 +477,11 @@ int hook_up_events( MM_Event *arr, size_t n )
                 cursor2 = &(arr[j]);
                 if ( cursor2->status_code == MIDI_NOTE_OFF && _compare_MidiNote( &(cursor->note), &(cursor2->note) ))
                 {
-                    sprintf( MM_Log_log_line, "minimidi.c > hook_up_events() > hooking up %i to %i ", i, j );
-                    MM_Log_writeline();
-                    
+                    #if DEBUG
+                        sprintf( MM_Log_log_line, "minimidi.c > hook_up_events() > hooking up %i to %i ", i, j );
+                        MM_Log_writeline();
+                    #endif
+
                     hook_counter++;
                     cursor->next = cursor2;
                     cursor2->prev = cursor;
@@ -740,20 +742,22 @@ MM_File * MM_File_init( char *file_path )
         retval->header->ppqn );
 
     MM_Log_writeline();
+    
+    #if DEBUG
+        for (int i = 0; i < retval->track->n_events; i++ )
+        {
+            // parse note name:
+            _midi_note_to_str( retval->track->event_arr[i].note , note_name);
 
-    for (int i = 0; i < retval->track->n_events; i++ )
-    {
-        // parse note name:
-        _midi_note_to_str( retval->track->event_arr[i].note , note_name);
+            sprintf( MM_Log_log_line, 
+                "MM_Track: Evt: %i, at (ticks=%li, note=%s)",
+                i,
+                retval->track->event_arr[i].abs_ticks,
+                note_name );
 
-        sprintf( MM_Log_log_line, 
-            "MM_Track: Evt: %i, at (ticks=%li, note=%s)",
-            i,
-            retval->track->event_arr[i].abs_ticks,
-            note_name );
-
-        MM_Log_writeline();
-    }
+            MM_Log_writeline();
+        }
+    #endif
     retval->bpm = 120;
 
     retval->events = MM_Event_LList_init();
@@ -766,11 +770,11 @@ unsigned short MM_File_get_bpm( MM_File *f ){
     return f->bpm;
 }
 
-size_t _sec_to_ticks( MM_File *f, double s ){
-    return (size_t)round(s * round( (double)(f->bpm) / 60.0 ) * (double)f->header->ppqn);    
+size_t _sec_to_ticks( MM_File *f, float s ){
+    return (size_t)round(s * round( (float)(f->bpm) / 60.0 ) * (float)f->header->ppqn);    
 }
 
-int MM_File_get_event_at_s( MM_File *file, MM_Event_LList *container, double s, double delta_t ){
+int MM_File_get_event_at_s( MM_File *file, MM_Event_LList *container, float s, float delta_t ){
 
     size_t _tick_start = _sec_to_ticks( file, s );
     size_t _tick_end = _tick_start + _sec_to_ticks( file, delta_t );

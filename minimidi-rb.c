@@ -159,17 +159,21 @@ size_t MM_Ring_Buffer__pop_n(MM_Ring_Buffer *rb, SAMPLE *dest, size_t n) {
     return read;
 }
 
+
 /* Optional helpers */
 
 bool MM_Ring_Buffer__is_empty(const MM_Ring_Buffer *rb) {
     return atomic_load(&rb->head) == atomic_load(&rb->tail);
 }
 
-size_t MM_Ring_Buffer__count_approx(const MM_Ring_Buffer *rb) {
+size_t MM_Ring_Buffer__get_free_space(const MM_Ring_Buffer *rb) {
+    // TODO: Undumb this
     size_t h = atomic_load(&rb->head);
     size_t t = atomic_load(&rb->tail);
     size_t cap = rb->size;
-    return (h >= t) ? h - t : h + cap - t;
+    size_t taken = (h >= t) ? h - t : h + cap - t;
+
+    return cap - taken;
 }
 
 size_t MM_Ring_Buffer__capacity(const MM_Ring_Buffer *rb) {

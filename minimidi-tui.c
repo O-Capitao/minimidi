@@ -585,7 +585,7 @@ int MM_TUI_init( MM_TUI *self, MM_File *file )
     self->midi_events_audio_list = MM_Event_LList_init();
     // TODO:
     // what here? display not smooth at lower franerates
-    self->fps = 15;
+    self->fps = 60;
 
     // INIT PLAYBACK STUFF
     self->playback_time = 0;
@@ -655,23 +655,23 @@ int MM_TUI_render(MM_TUI *s ){
 int MM_TUI_step( MM_TUI *self ){
 
     clock_t step_start, step_end;
-    double ellapsed;
+    float ellapsed;
 
     static int _debug_step_cntr;
     step_start = clock();
     
-    
-    if (_debug_step_cntr++ == 5){
-        _debug_step_cntr = 0;
+    #if DEBUG
+        if (_debug_step_cntr++ == 5){
+            _debug_step_cntr = 0;
+            
+            sprintf( MM_Log_log_line, "minimidi-tui.c > MM_TUI_step() : _cursor at ticks: %i, _logica_start at %i, _logical_size at %i", 
+                self->_cursor_position_ticks,
+                self->logical_start[0],
+                self->logical_size[0]);
+            MM_Log_writeline();
 
-        sprintf( MM_Log_log_line, "minimidi-tui.c > MM_TUI_step() : _cursor at ticks: %i, _logica_start at %i, _logical_size at %i", 
-            self->_cursor_position_ticks,
-            self->logical_start[0],
-            self->logical_size[0]);
-        MM_Log_writeline();
-
-    }
-
+        }
+    #endif
     // get input
     _handle_input( self );
     _update_sizes( self );
@@ -679,35 +679,42 @@ int MM_TUI_step( MM_TUI *self ){
 
     // set synth state
     self->synth->is_playing = self->is_playing;
-    self->playback_time += self->delta_t_ms;
-    
-    // step Synth
-    MM_File_get_event_at_s( self->file, self->midi_events_audio_list, (double)self->playback_time / 1000.0, (double)self->delta_t_ms / 1000.0 );
 
-    MM_Event_LList_Node *_n = self->midi_events_audio_list->first;
-    // start processing events
-    while (_n ){
-        if (_n->value->status_code == MIDI_NOTE_ON){
-            MM_Synth_press_key( self->synth, &(_n->value->note));
-        } else if (_n->value->status_code == MIDI_NOTE_OFF){
-            MM_Synth_release_key( self->synth, &(_n->value->note));
+    if (self->is_playing){
+    
+        self->playback_time += self->delta_t_ms;
+        
+        // step Synth
+        MM_File_get_event_at_s( self->file, self->midi_events_audio_list, (float)self->playback_time / 1000.0, (float)self->delta_t_ms / 1000.0 );
+
+        MM_Event_LList_Node *_n = self->midi_events_audio_list->first;
+        // start processing events
+        while (_n ){
+            if (_n->value->status_code == MIDI_NOTE_ON){
+                MM_Synth_press_key( self->synth, &(_n->value->note));
+            } else if (_n->value->status_code == MIDI_NOTE_OFF){
+                MM_Synth_release_key( self->synth, &(_n->value->note));
+            }
+            _n = _n->next;
         }
-        _n = _n->next;
+
+        MM_Synth_step(self->synth);
+
+        // sleep until next step
+        step_end = clock();
+        ellapsed = (float)(step_end - step_start) * 1000 / CLOCKS_PER_SEC;
+        
+        #if DEBUG
+            if (_debug_step_cntr == 5){
+                sprintf( MM_Log_log_line, "minimidi-tui.c > MM_TUI_step() : step logic took %f ms.", 
+                    ellapsed);
+                MM_Log_writeline();     
+            }
+        #endif
     }
-
-    MM_Synth_step(self->synth);
-
-    // sleep until next step
-    step_end = clock();
-    ellapsed = (double)(step_end - step_start) * 1000 / CLOCKS_PER_SEC;
     
-    if (_debug_step_cntr == 5){
-        sprintf( MM_Log_log_line, "minimidi-tui.c > MM_TUI_step() : step logic took %f ms.", 
-            ellapsed);
-        MM_Log_writeline();     
-    }
-
     usleep( (self->delta_t_ms - ellapsed) * 1000 );
+    
     return 0;
 }
 

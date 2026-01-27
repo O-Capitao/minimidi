@@ -141,7 +141,7 @@ typedef struct MM_File
 MM_File       *MM_File_init                 ( char *file_path );
 void           MM_File_free                 ( MM_File *file );
 unsigned short MM_File_get_bpm              ( MM_File *file );
-int            MM_File_get_event_at_s       ( MM_File *file, MM_Event_LList *container, double s, double delta_t );
+int            MM_File_get_event_at_s       ( MM_File *file, MM_Event_LList *container, float s, float delta_t );
 int            MM_File_get_events_in_range  ( MM_File *file, MM_Event_LList *list, int start_ticks, int end_ticks, int start_note, int end_note );
 
 #endif /* MM_H */

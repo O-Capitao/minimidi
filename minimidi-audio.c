@@ -8,8 +8,8 @@
 #define BUFFER_SIZE 4096
 
 // note_i is the number of the note, starting from C0
-double _calc_tempered_freq( int note_i ){
-    return 440.0 * pow( 2, ((double)note_i - 57.0) / 12.0 );
+float _calc_tempered_freq( int note_i ){
+    return 440.0 * pow( 2, ((float)note_i - 57.0) / 12.0 );
 }
 
 static int paStreamCallback( const void *inputBuffer,
@@ -39,13 +39,16 @@ MM_Synth *MM_Synth_init( MM_Event *track_events, size_t total_events ){
     // init memory
     s->n_oscilators = 1;
     s->t = 0;
-    s->delta_t = 1.00 / (double)AUDIO_FRAMERATE;
+    s->delta_t = 1.00 / (float)AUDIO_FRAMERATE;
     s->rb = MM_Ring_Buffer__init( BUFFER_SIZE );
 
     // init Portaudio
     if ( Pa_Initialize() != paNoError){    
         return NULL;
     }
+
+    // dump PortAudio datagem,
+
 
     // open stream
     PaError e = Pa_OpenDefaultStream(
@@ -87,6 +90,33 @@ MM_Synth *MM_Synth_init( MM_Event *track_events, size_t total_events ){
     s->is_playing = false;
     s->active_note = NULL;
 
+
+    const PaStreamInfo *sInfo = Pa_GetStreamInfo(s->pa_stream);
+    if (!sInfo) {
+        snprintf(MM_Log_log_line, LOG_LINE_MAX_LEN, "Error: Could not retrieve stream info.");
+        return 0;
+    }
+
+    // Identify the device used by the stream (assuming output here)
+    // Note: You must track which device index you used to open the stream
+    PaDeviceIndex outDev = Pa_GetDefaultOutputDevice(); 
+    const PaDeviceInfo *dInfo = Pa_GetDeviceInfo(outDev);
+    const PaHostApiInfo *hInfo = Pa_GetHostApiInfo(dInfo->hostApi);
+
+    snprintf(MM_Log_log_line, LOG_LINE_MAX_LEN,
+             "--- Diagnostic Data ---\n"
+             "Device Name: %s\n"
+             "Host API:    %s\n"
+             "Sample Rate: %.0f Hz (Actual)\n"
+             "Out Latency: %.4f ms\n"
+             "In Latency:  %.4f ms\n",
+             dInfo->name,
+             hInfo->name,
+             sInfo->sampleRate,
+             sInfo->outputLatency * 1000.0,
+             sInfo->inputLatency * 1000.0);
+    MM_Log_writeline();
+
     sprintf( MM_Log_log_line, "minimidi-audio.c > MM_Synth_init : exiting.");
     MM_Log_writeline();
 
@@ -116,14 +146,15 @@ int MM_Synth_destroy( MM_Synth *s ){
     return 0; 
 }
 
-double _produce_val( MM_Synth *s ){
+float _produce_val( MM_Synth *s ){
 
-    if (s->active_note){
-        double freq = s->tempered_freqs[ 12 * s->active_note->octave + (int)s->active_note->note ];
-        double period = 1.0 / freq;
-        double t_in_period = fmodf( s->t, period ); 
+    if (s->active_note && s->is_playing){
+        float freq = s->tempered_freqs[ 12 * s->active_note->octave + (int)s->active_note->note ];
+        float period = 1.0 / freq;
+        float t_in_period = fmodf( s->t, period );
+        float retval = t_in_period / period > 0.5 ? 0 : 0.3333;
 
-        return t_in_period / period > 0.5 ? 0 : 0.3333;
+        return retval;
     }
     return 0;
 }
@@ -131,9 +162,13 @@ double _produce_val( MM_Synth *s ){
 //
 int _produce_values( MM_Synth *s, size_t n_to_produce, float *output_arr ){
 
-    for (size_t i = 0; i < n_to_produce; i++){
-        output_arr[i] = _produce_val( s );
+    sprintf(MM_Log_log_line, "minimidi-audio.c > _produce_values > producing %li values.", n_to_produce);
+    MM_Log_writeline();
 
+    float _val;
+    for (size_t i = 0; i < n_to_produce; i++){
+        _val = _produce_val( s );
+        output_arr[i] = _val;
         // update state
         s->t += s->delta_t;
     }
@@ -146,23 +181,22 @@ float _SYNTH_BUFFER[BUFFER_SIZE];
 int MM_Synth_step( MM_Synth *s ){
 
     // write to buffer
-    size_t _space_in_buffer = MM_Ring_Buffer__count_approx( s->rb );
+    size_t _space_in_buffer = MM_Ring_Buffer__get_free_space( s->rb );
     sprintf(MM_Log_log_line, "minimidi-audio.c > MM_Synth_step > entering, free space is %li", _space_in_buffer);
     MM_Log_writeline();
 
-    if (_space_in_buffer > BUFFER_SIZE / 3){
-        
+    if (_space_in_buffer){
+
         // catch stupid errors
         if (_space_in_buffer > BUFFER_SIZE){
             sprintf(MM_Log_log_line, "minimidi-audio.c > MM_Synth_step > oops");
             MM_Log_writeline();
         }
-        _produce_values( s, _space_in_buffer, _SYNTH_BUFFER );
 
+        _produce_values( s, _space_in_buffer, _SYNTH_BUFFER );
+        MM_Log_dump_arr_of_floats(_SYNTH_BUFFER, BUFFER_SIZE);
         MM_Ring_Buffer__push_n(s->rb, _SYNTH_BUFFER, _space_in_buffer);
     }
-
-
 
     return 0;
 }

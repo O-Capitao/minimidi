@@ -18,7 +18,11 @@ static const char *run_header = "\n\n"
 
 static char date_time_header[100];
 char MM_Log_log_line[ LOG_LINE_MAX_LEN ]; // extern
+char MM_Log_log_buffer[ LOG_LINE_MAX_LEN * LOG_LINES_IN_BUFFER ];
+char MM_Log_formated_log_line[ 2 * LOG_LINE_MAX_LEN ]; 
 FILE *MM_Log_file;
+
+size_t _buffer_ln_count = 0;
 
 int MM_Log_init()
 {
@@ -39,13 +43,24 @@ int MM_Log_init()
 // append right to file, screw performance and whatever
 int MM_Log_writeline()
 {
+    if (_buffer_ln_count >= LOG_LINES_IN_BUFFER - 1 ){
+        MM_Log_flush();
+    }
+
     time_t now = time(NULL);
-    struct tm *t = localtime(&now);
+    struct tm *t = localtime(&now); 
 
     strftime(date_time_header, sizeof(date_time_header)-1, "[ %d/%m/%Y . %H:%M:%S ]", t);
-    fprintf( MM_Log_file, "%s : %s\n", date_time_header, MM_Log_log_line );
+    sprintf( MM_Log_formated_log_line, "%s : %s\n", date_time_header, MM_Log_log_line );
+    strcat(MM_Log_log_buffer, MM_Log_formated_log_line);
 
+    _buffer_ln_count ++;
     return 0;
+}
+
+int MM_Log_flush(){
+     fprintf( MM_Log_file, MM_Log_log_buffer );
+    _buffer_ln_count = 0;
 }
 
 int MM_Log_free()
@@ -57,5 +72,22 @@ int MM_Log_free()
 
     // free(MM_Log_log_line);
 
+    return 0;
+}
+
+char _buff[128];
+// Use this to debug what's in the buffer.
+// for now, just print 10 values from the start, to see if something fishy is goind on
+int MM_Log_dump_arr_of_floats( float *values, size_t len ){
+    
+    // MM_Log_log_line[0] = '\0';
+
+     for (int i = 0; i < 10; i++ ){
+        sprintf(_buff, "%.2e ,", values[i]);
+        strcat(MM_Log_log_line, _buff);
+    }
+    // 
+    strcat(MM_Log_log_line, "\0");
+    MM_Log_writeline();
     return 0;
 }
