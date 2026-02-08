@@ -31,7 +31,7 @@ int log_init(const char *filename) {
         return 1;
     }
     
-    // Set a default log level
+    // SET DEBUG LEVEL
     L.level = LOG_DEBUG;
 
     // Start today's logging

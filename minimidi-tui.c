@@ -568,7 +568,7 @@ int MM_TUI_init( MM_TUI *self, MM_File *file )
     self->midi_events_audio_list = MM_Event_LList_init();
     // TODO:
     // what here? display not smooth at lower franerates
-    self->fps = 60;
+    self->fps = 30;
 
     // INIT PLAYBACK STUFF
     self->playback_time = 0;
@@ -596,7 +596,7 @@ int MM_TUI_init( MM_TUI *self, MM_File *file )
     if ( _init_ncurses(self) ) return 1;
 
     // init audio
-    self->synth = MM_Synth_init( file->track->event_arr );
+    // self->synth = MM_Synth_init( file->track->event_arr );
     self->evts_in_buffer = 0;
 
     log_debug("TUI Init: done");
@@ -652,7 +652,7 @@ int MM_TUI_step( MM_TUI *self ){
     MM_TUI_render( self );
 
     // set synth state
-    self->synth->is_playing = self->is_playing;
+    // self->synth->is_playing = self->is_playing;
 
     if (self->is_playing){
 
@@ -662,17 +662,17 @@ int MM_TUI_step( MM_TUI *self ){
         MM_File_get_event_at_s( self->file, self->midi_events_audio_list, (float)self->playback_time / 1000.0, (float)self->delta_t_ms / 1000.0 );
 
         MM_Event_LList_Node *_n = self->midi_events_audio_list->first;
-        // start processing events
-        while (_n ){
-            if (_n->value->status_code == MIDI_NOTE_ON){
-                MM_Synth_press_key( self->synth, &(_n->value->note));
-            } else if (_n->value->status_code == MIDI_NOTE_OFF){
-                MM_Synth_release_key( self->synth, &(_n->value->note));
-            }
-            _n = _n->next;
-        }
+        // // start processing events
+        // while (_n ){
+        //     if (_n->value->status_code == MIDI_NOTE_ON){
+        //         MM_Synth_press_key( self->synth, &(_n->value->note));
+        //     } else if (_n->value->status_code == MIDI_NOTE_OFF){
+        //         MM_Synth_release_key( self->synth, &(_n->value->note));
+        //     }
+        //     _n = _n->next;
+        // }
 
-        MM_Synth_step(self->synth);
+        // MM_Synth_step(self->synth);
 
         #if DEBUG
             if (_debug_step_cntr == 5){
@@ -687,14 +687,17 @@ int MM_TUI_step( MM_TUI *self ){
 
     assert(self->delta_t_ms > (1000 * ellapsed_s));
     log_debug("Worked for %g s", ellapsed_s);
-    sleep( (self->delta_t_ms / 1000.0) - ellapsed_s);
+
+
+    // sleep( (self->delta_t_ms / 1000.0) - ellapsed_s);
+    usleep((self->delta_t_ms * 1000) - ellapsed_s * 1000000);
     
     return 0;
-}
+} 
 
 int MM_TUI_destroy( MM_TUI *self)
 {
-    MM_Synth_destroy(self->synth);
+    // MM_Synth_destroy(self->synth);
 
     delwin( self->grid_derwin );
     endwin();

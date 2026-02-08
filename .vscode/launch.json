@@ -5,15 +5,16 @@
             "name": "(gdb) Launch",
             "type": "cppdbg",
             "request": "launch",
-            "program": "minimidi.a",
+            "program": "minimidi",
             "args": [
                 "bassline1.MID"
             ],
             "stopAtEntry": false,
-            "cwd": "${fileDirname}",
+            "cwd": "~/thecodez/minimidi",
             "environment": [],
             "externalConsole": false,
             "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
             "setupCommands": [
                 {
                     "description": "Enable pretty-printing for gdb",

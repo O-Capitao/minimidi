@@ -65,12 +65,12 @@ typedef struct MM_TUI
     WINDOW *playback_derwin;
 
     // playback
-    MM_Synth *synth;
+    // MM_Synth *synth;
 
 } MM_TUI;
 
 /***
- *  "class" methods:
+ *  "class" methods:    
  */
 int MM_TUI_init   ( MM_TUI *self, MM_File *file );
 int MM_TUI_step   ( MM_TUI *self );

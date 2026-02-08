@@ -476,10 +476,7 @@ int hook_up_events( MM_Event *arr, size_t n )
                 cursor2 = &(arr[j]);
                 if ( cursor2->status_code == MIDI_NOTE_OFF && _compare_MidiNote( &(cursor->note), &(cursor2->note) ))
                 {
-                    #if DEBUG
-                        log_debug("minimidi.c > hook_up_events() > hooking up %i to %i ", i, j);
-                    #endif
-
+                    log_debug("minimidi.c > hook_up_events() > hooking up %i to %i ", i, j);
                     hook_counter++;
                     cursor->next = cursor2;
                     cursor2->prev = cursor;
@@ -713,7 +710,7 @@ MM_File * MM_File_init( char *file_path )
     free( buffer );
 
     // logging
-    char note_name[5];
+    // char note_name[5];
     
     log_info(
         "MM_File : parsed %s : %ld bytes, got %ld events.",
@@ -727,19 +724,19 @@ MM_File * MM_File_init( char *file_path )
         retval->header->length,
         retval->header->ppqn );
     
-    #if DEBUG
-        for (int i = 0; i < retval->track->n_events; i++ )
-        {
-            // parse note name:
-            _midi_note_to_str( retval->track->event_arr[i].note , note_name);
+    // #if DEBUG
+    //     for (int i = 0; i < retval->track->n_events; i++ )
+    //     {
+    //         // parse note name:
+    //         _midi_note_to_str( retval->track->event_arr[i].note , note_name);
 
-            log_trace(
-                "MM_Track: Evt: %i, at (ticks=%li, note=%s)",
-                i,
-                retval->track->event_arr[i].abs_ticks,
-                note_name );
-        }
-    #endif
+    //         log_trace(
+    //             "MM_Track: Evt: %i, at (ticks=%li, note=%s)",
+    //             i,
+    //             retval->track->event_arr[i].abs_ticks,
+    //             note_name );
+    //     }
+    // #endif
     retval->bpm = 120;
 
     retval->events = MM_Event_LList_init();
