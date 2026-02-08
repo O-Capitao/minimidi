@@ -31,8 +31,7 @@ static int paStreamCallback( const void *inputBuffer,
 
 MM_Synth *MM_Synth_init( MM_Event *track_events, size_t total_events ){
 
-    sprintf( MM_Log_log_line, "minimidi-audio.c > MM_Synth_init : entering.");
-    MM_Log_writeline();
+    log_debug("minimidi-audio.c > MM_Synth_init : entering.");
 
     MM_Synth* s = (MM_Synth*)malloc(sizeof(MM_Synth));
 
@@ -93,7 +92,7 @@ MM_Synth *MM_Synth_init( MM_Event *track_events, size_t total_events ){
 
     const PaStreamInfo *sInfo = Pa_GetStreamInfo(s->pa_stream);
     if (!sInfo) {
-        snprintf(MM_Log_log_line, LOG_LINE_MAX_LEN, "Error: Could not retrieve stream info.");
+        log_error("Error: Could not retrieve stream info.");
         return 0;
     }
 
@@ -103,22 +102,20 @@ MM_Synth *MM_Synth_init( MM_Event *track_events, size_t total_events ){
     const PaDeviceInfo *dInfo = Pa_GetDeviceInfo(outDev);
     const PaHostApiInfo *hInfo = Pa_GetHostApiInfo(dInfo->hostApi);
 
-    snprintf(MM_Log_log_line, LOG_LINE_MAX_LEN,
+    log_info(
              "--- Diagnostic Data ---\n"
              "Device Name: %s\n"
              "Host API:    %s\n"
              "Sample Rate: %.0f Hz (Actual)\n"
              "Out Latency: %.4f ms\n"
-             "In Latency:  %.4f ms\n",
+             "In Latency:  %.4f ms",
              dInfo->name,
              hInfo->name,
              sInfo->sampleRate,
              sInfo->outputLatency * 1000.0,
              sInfo->inputLatency * 1000.0);
-    MM_Log_writeline();
 
-    sprintf( MM_Log_log_line, "minimidi-audio.c > MM_Synth_init : exiting.");
-    MM_Log_writeline();
+    log_debug("minimidi-audio.c > MM_Synth_init : exiting.");
 
     return s;
 }
@@ -147,7 +144,6 @@ int MM_Synth_destroy( MM_Synth *s ){
 }
 
 float _produce_val( MM_Synth *s ){
-
     if (s->active_note && s->is_playing){
         float freq = s->tempered_freqs[ 12 * s->active_note->octave + (int)s->active_note->note ];
         float period = 1.0 / freq;
@@ -162,8 +158,7 @@ float _produce_val( MM_Synth *s ){
 //
 int _produce_values( MM_Synth *s, size_t n_to_produce, float *output_arr ){
 
-    sprintf(MM_Log_log_line, "minimidi-audio.c > _produce_values > producing %li values.", n_to_produce);
-    MM_Log_writeline();
+    log_trace("minimidi-audio.c > _produce_values > producing %li values.", n_to_produce);
 
     float _val;
     for (size_t i = 0; i < n_to_produce; i++){
@@ -182,19 +177,18 @@ int MM_Synth_step( MM_Synth *s ){
 
     // write to buffer
     size_t _space_in_buffer = MM_Ring_Buffer__get_free_space( s->rb );
-    sprintf(MM_Log_log_line, "minimidi-audio.c > MM_Synth_step > entering, free space is %li", _space_in_buffer);
-    MM_Log_writeline();
+    log_debug("minimidi-audio.c > MM_Synth_step > entering, free space is %li", _space_in_buffer);
 
     if (_space_in_buffer){
 
-        // catch stupid errors
-        if (_space_in_buffer > BUFFER_SIZE){
-            sprintf(MM_Log_log_line, "minimidi-audio.c > MM_Synth_step > oops");
-            MM_Log_writeline();
-        }
+        assert(_space_in_buffer <= BUFFER_SIZE);
 
         _produce_values( s, _space_in_buffer, _SYNTH_BUFFER );
-        MM_Log_dump_arr_of_floats(_SYNTH_BUFFER, BUFFER_SIZE);
+        
+        for (int i = 0; i < _space_in_buffer; i+=100) {
+            log_debug("_SYNTH_BUFFER[%d] = %f", i, _SYNTH_BUFFER[i]);
+        }
+
         MM_Ring_Buffer__push_n(s->rb, _SYNTH_BUFFER, _space_in_buffer);
     }
 

@@ -3,19 +3,28 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include <stdarg.h>
 
-#define LOG_LINE_MAX_LEN 512
-#define LOG_LINES_IN_BUFFER 128
+typedef enum {
+  LOG_TRACE,
+  LOG_DEBUG,
+  LOG_INFO,
+  LOG_WARN,
+  LOG_ERROR,
+  LOG_FATAL
+} LogLevel;
 
-extern char MM_Log_log_line[ LOG_LINE_MAX_LEN ];
-// extern 
+// Function declarations
+int log_init(const char *filename);
+void log_deinit();
+void log_log(LogLevel level, const char *fmt, ...);
 
-int MM_Log_init();
-int MM_Log_writeline();
-int MM_Log_flush();
-int MM_Log_free();
-
-// utilities
-int MM_Log_dump_arr_of_floats( float *values, size_t len );
+// Convenience macros
+#define log_trace(fmt, ...) log_log(LOG_TRACE, fmt, ##__VA_ARGS__)
+#define log_debug(fmt, ...) log_log(LOG_DEBUG, fmt, ##__VA_ARGS__)
+#define log_info(fmt, ...)  log_log(LOG_INFO, fmt, ##__VA_ARGS__)
+#define log_warn(fmt, ...)  log_log(LOG_WARN, fmt, ##__VA_ARGS__)
+#define log_error(fmt, ...) log_log(LOG_ERROR, fmt, ##__VA_ARGS__)
+#define log_fatal(fmt, ...) log_log(LOG_FATAL, fmt, ##__VA_ARGS__)
 
 #endif /* MM_LOG_H */

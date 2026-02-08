@@ -79,8 +79,7 @@ int _update_sizes( MM_TUI *self )
     // move increment is always one bar, figure oput later how to handle cleanly
     self->move_increment = 2 * self->file->header->ppqn;
 
-    // sprintf( MM_Log_log_line, "minimidi-tui.c > _update_sizes() : set increment to %i", self->move_increment );
-    // MM_Log_writeline();
+
     if (self->is_playing){
         self->_cursor_position_ticks += self->delta_ticks;
         // move the screen if needed
@@ -227,22 +226,15 @@ int _handle_input( MM_TUI *self )
         case KEY_RIGHT:
             self->logical_start[0] += self->move_increment;
 
-            sprintf( MM_Log_log_line, "minimidi-tui.c > _handle_input() : mving by %i, new start at %i", self->move_increment, self->logical_start[0] );
-            MM_Log_writeline();
+            log_debug("minimidi-tui.c > _handle_input() : moving by %i, new start at %i", self->move_increment, self->logical_start[0]);
     
             break;
         // PLAY THAT FUNKY MUSIC WHITE BOY
         case ' ':
 
-            sprintf( MM_Log_log_line, "minimidi-tui.c > _handle_input() : pressed SPACE" );
-            MM_Log_writeline();
+            log_debug("minimidi-tui.c > _handle_input() : pressed SPACE");
 
             self->is_playing = !self->is_playing;
-
-            // if (nodelay(stdscr, self->is_playing ? 1 : 0) != 0){
-            //     sprintf( MM_Log_log_line, "minimidi-tui.c > _handle_input() : pressed SPACE : nodelay produces an error" );
-            //     MM_Log_writeline();
-            // }
 
              break;
         case 'q':
@@ -330,8 +322,7 @@ int _draw_bar_label( MM_TUI *self, int bar_n, int line_index, int col_index ){
 
 int _render_grid( MM_TUI *self ){
 
-    // sprintf( MM_Log_log_line, "minimidi-tui.c > _render_grid() : Entering" );
-    // MM_Log_writeline();
+
     
     int err;
     int line_index, aux_line_index, beat_counter, bar_counter, col_in_grid;
@@ -343,8 +334,7 @@ int _render_grid( MM_TUI *self ){
     int bar_offset = (self->logical_start[0] / ppqn) / self->beats_in_bar + 1;
     int x_ticks = 0;
 
-    // sprintf( MM_Log_log_line, "minimidi-tui.c > _render_grid() : bar_offset = %i", bar_offset );
-    // MM_Log_writeline();
+
 
     for (int i_note = self->logical_start[1]; i_note < self->logical_start[1] + self->logical_size[1]; i_note ++ ){
 
@@ -359,8 +349,7 @@ int _render_grid( MM_TUI *self ){
         // cycle through drawable cols
         for (int j = GRID_LEFT_LABELS_WIDTH; j < self->grid_size[0] - 1 /* box */; j ++ ){
             
-            // sprintf( MM_Log_log_line, "minimidi-tui.c > _render_grid() : iterating in columns, j=%i", j );
-            // MM_Log_writeline();
+
             
             // dash under even beats
             if ( beat_counter % 2 == 0 ){
@@ -381,8 +370,7 @@ int _render_grid( MM_TUI *self ){
 
                 beat_counter++;
 
-                // sprintf( MM_Log_log_line, "minimidi-tui.c > _render_grid() : new beat %i at j=%i", beat_counter, j );
-                // MM_Log_writeline();
+
 
                 if ( beat_counter % self->beats_in_bar == 0) {
  
@@ -394,8 +382,7 @@ int _render_grid( MM_TUI *self ){
                     // annotate the bar num for the 1st line only
                     if (i_note == (self->logical_start[1] + self->logical_size[1] - 1) && j < self->grid_size[0] - 10 ){
 
-                        // sprintf( MM_Log_log_line, "minimidi-tui.c > _render_grid() : draw bar for BAR %i, line=%i, col=%i", bar_counter+bar_offset, i_note, j );
-                        // MM_Log_writeline();
+
                         
                         _draw_bar_label( self, bar_offset + bar_counter, aux_line_index, j + 2 );
                     }
@@ -419,9 +406,6 @@ int _render_grid( MM_TUI *self ){
 
 int _render_midi( MM_TUI *self )
 {
-    // sprintf( MM_Log_log_line, "minimidi-tui.c > _render_midi() : Entering" );
-    MM_Log_writeline();
-
     MM_Event_LList_Node *cursor;
     MM_Event *aux;
 
@@ -447,8 +431,7 @@ int _render_midi( MM_TUI *self )
 
         tgt_col = GRID_LEFT_LABELS_WIDTH + ( (cursor_tick - self->logical_start[0]) / self->ticks_per_col );
 
-        // sprintf( MM_Log_log_line, "minimidi-tui.c > _render_midi() : leading edge of event at tgt_col=%i, tick=%i, ticks_per_col=%i ", tgt_col, cursor_tick, self->ticks_per_col );
-        // MM_Log_writeline();
+
 
         // draw this fucker
         if ( cursor->value->status_code == MIDI_NOTE_ON )
@@ -616,6 +599,8 @@ int MM_TUI_init( MM_TUI *self, MM_File *file )
     self->synth = MM_Synth_init( file->track->event_arr );
     self->evts_in_buffer = 0;
 
+    log_debug("TUI Init: done");
+
     return 0;
 }
 
@@ -655,23 +640,12 @@ int MM_TUI_render(MM_TUI *s ){
 int MM_TUI_step( MM_TUI *self ){
 
     clock_t step_start, step_end;
-    float ellapsed;
+    double ellapsed_s;
 
-    static int _debug_step_cntr;
     step_start = clock();
-    
-    #if DEBUG
-        if (_debug_step_cntr++ == 5){
-            _debug_step_cntr = 0;
-            
-            sprintf( MM_Log_log_line, "minimidi-tui.c > MM_TUI_step() : _cursor at ticks: %i, _logica_start at %i, _logical_size at %i", 
-                self->_cursor_position_ticks,
-                self->logical_start[0],
-                self->logical_size[0]);
-            MM_Log_writeline();
+    double time_in_seconds = (double)step_start / (double)CLOCKS_PER_SEC;
+    log_debug("Entering MM_TUI_step at %g s", time_in_seconds);
 
-        }
-    #endif
     // get input
     _handle_input( self );
     _update_sizes( self );
@@ -681,7 +655,7 @@ int MM_TUI_step( MM_TUI *self ){
     self->synth->is_playing = self->is_playing;
 
     if (self->is_playing){
-    
+
         self->playback_time += self->delta_t_ms;
         
         // step Synth
@@ -700,20 +674,20 @@ int MM_TUI_step( MM_TUI *self ){
 
         MM_Synth_step(self->synth);
 
-        // sleep until next step
-        step_end = clock();
-        ellapsed = (float)(step_end - step_start) * 1000 / CLOCKS_PER_SEC;
-        
         #if DEBUG
             if (_debug_step_cntr == 5){
-                sprintf( MM_Log_log_line, "minimidi-tui.c > MM_TUI_step() : step logic took %f ms.", 
+                log_debug("minimidi-tui.c > MM_TUI_step() : step logic took %f ms.",
                     ellapsed);
-                MM_Log_writeline();     
             }
         #endif
     }
-    
-    usleep( (self->delta_t_ms - ellapsed) * 1000 );
+
+    step_end = clock();
+    ellapsed_s = (double)(step_end - step_start) / (double)CLOCKS_PER_SEC;
+
+    assert(self->delta_t_ms > (1000 * ellapsed_s));
+    log_debug("Worked for %g s", ellapsed_s);
+    sleep( (self->delta_t_ms / 1000.0) - ellapsed_s);
     
     return 0;
 }

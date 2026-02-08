@@ -454,8 +454,7 @@ MM_File* create_mini_midi_file(const char *filepath) {
 
 int hook_up_events( MM_Event *arr, size_t n )
 {
-    sprintf( MM_Log_log_line, "minimidi.c > hook_up_events() : Entering" );
-    MM_Log_writeline();
+    log_debug("minimidi.c > hook_up_events() : Entering");
 
 
 
@@ -478,8 +477,7 @@ int hook_up_events( MM_Event *arr, size_t n )
                 if ( cursor2->status_code == MIDI_NOTE_OFF && _compare_MidiNote( &(cursor->note), &(cursor2->note) ))
                 {
                     #if DEBUG
-                        sprintf( MM_Log_log_line, "minimidi.c > hook_up_events() > hooking up %i to %i ", i, j );
-                        MM_Log_writeline();
+                        log_debug("minimidi.c > hook_up_events() > hooking up %i to %i ", i, j);
                     #endif
 
                     hook_counter++;
@@ -633,17 +631,7 @@ void _midi_status_code_to_str( MidiStatusCode status, char* str )
 }
 
 
-void MM_Event_to_string_log( int index, MM_Event *me, char *str )
-{
-    char aux_str[16]; // for status code translation
-    char note_str[8];
 
-    _midi_note_to_str(me->note, note_str);
-    _midi_status_code_to_str(me->status_code, aux_str);
-
-    sprintf( str, "EVT [%i]: ticks=%ld, note=%s, status=%s", index, me->abs_ticks, note_str, aux_str );
-
-}
 
 
 
@@ -727,21 +715,17 @@ MM_File * MM_File_init( char *file_path )
     // logging
     char note_name[5];
     
-    sprintf( MM_Log_log_line, 
+    log_info(
         "MM_File : parsed %s : %ld bytes, got %ld events.",
         file_path,
         retval->track->length,
         retval->track->n_events );
 
-    MM_Log_writeline();
-
     // log header info
-    sprintf( MM_Log_log_line,
+    log_info(
         "MM_Header: Chunk Size: %zu, PPQN: %i.",
         retval->header->length,
         retval->header->ppqn );
-
-    MM_Log_writeline();
     
     #if DEBUG
         for (int i = 0; i < retval->track->n_events; i++ )
@@ -749,13 +733,11 @@ MM_File * MM_File_init( char *file_path )
             // parse note name:
             _midi_note_to_str( retval->track->event_arr[i].note , note_name);
 
-            sprintf( MM_Log_log_line, 
+            log_trace(
                 "MM_Track: Evt: %i, at (ticks=%li, note=%s)",
                 i,
                 retval->track->event_arr[i].abs_ticks,
                 note_name );
-
-            MM_Log_writeline();
         }
     #endif
     retval->bpm = 120;
@@ -796,21 +778,21 @@ MM_Event_LList *MM_Event_LList_init()
 
 // Kenny Loggings
 void __dump_list_to_log(MM_File *f, MM_Event_LList *l) {
-
+    char note_str[8];
+    char status_str[16];
     int e_counter = 0;
     MM_Event_LList_Node *cursor = l->first;
 
     while (cursor) {
-
-        MM_Event_to_string_log( e_counter, cursor->value, MM_Log_log_line );
-        MM_Log_writeline();
+        _midi_note_to_str(cursor->value->note, note_str);
+        _midi_status_code_to_str(cursor->value->status_code, status_str);
+        log_trace("EVT [%i]: ticks=%ld, note=%s, status=%s", e_counter, cursor->value->abs_ticks, note_str, status_str);
 
         cursor = cursor->next;
         e_counter++;
     }
 
-    sprintf( MM_Log_log_line, "minimidi.c > MM_Event_LList > init : Done initing with %i events.", e_counter );
-    MM_Log_writeline();
+    log_debug("minimidi.c > MM_Event_LList > init : Done initing with %i events.", e_counter);
 }
 
 
@@ -895,8 +877,7 @@ int MM_Event_LList_from_array( MM_Event_LList *list, MM_Event *array, size_t n_e
     for (int i = 0; i < n_events; i++){
         err = MM_Event_LList_append(list, array + i);
         if (err){
-            sprintf( MM_Log_log_line, "MM_Event_LList_from_array. err@ %i", i);
-            MM_Log_writeline();
+            log_error("MM_Event_LList_from_array. err@ %i", i);
             return err;
         }
     }

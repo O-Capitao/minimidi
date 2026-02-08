@@ -15,7 +15,8 @@ void quit( MM_TUI *ui, MM_File *f, int is_error )
     MM_File_free( f );
     if (is_error)
     {
-        printf(RED "ERROR" RESET "Houston we have a problem...");
+        log_error("An error occurred, quitting.");
+        printf(RED "ERROR" RESET " Houston we have a problem...\n");
     }
 }
 
@@ -26,13 +27,14 @@ int main( int argc, char *argv[] )
 {
     // Catch Args
     if (argc < 2){
+        log_fatal("Please supply args.");
         printf(RED "ERROR" RESET " please supply args.\n");
         return 1;
     }
 
     size_t sizeofarg = strlen(argv[1]);
     if (sizeofarg > ARG_MAX_LEN){
-        
+        log_fatal("Too many args.");
         printf(RED "ERROR" RESET " Too many args.\n");
         return 1;
     }
@@ -41,9 +43,12 @@ int main( int argc, char *argv[] )
     char *tmux = getenv("TMUX");
     
     // init logger
-    MM_Log_init();
-    sprintf( MM_Log_log_line, "main: initting." );
-    MM_Log_writeline();
+    if (log_init("minimidi.log") != 0) {
+        // If logger fails, we can't log the error, so print to stderr and exit.
+        fprintf(stderr, "Failed to initialize logger. Exiting.\n");
+        return 1;
+    }
+    log_info("main: initting.");
 
     // check if we're running in tmux
     if (tmux)
@@ -69,6 +74,7 @@ int main( int argc, char *argv[] )
     MM_File *midi_file = MM_File_init( argv[1] );
  
     if (midi_file == NULL) {
+        log_error("Failed to read MIDI file: %s", argv[1]);
         printf(RED "ERROR" RESET " Failed to read MIDI file: %s\n", argv[1]);
         return 1;
     }
@@ -91,7 +97,7 @@ int main( int argc, char *argv[] )
     }
 
     quit(ui, midi_file, ERRSTATUS ? true: false);
-    MM_Log_free();
+    log_deinit();
 
     return 0;
 }
