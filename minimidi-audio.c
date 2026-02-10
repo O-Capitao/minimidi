@@ -63,6 +63,9 @@ static int paStreamCallback( const void *inputBuffer,
             out[i] = MM_Synth_next_sample( &(e->synth), e->audio_time);
             
             e->audio_time += e->delta_t;
+
+            // post for other threads to see (UI )
+            atomic_store_explicit(&e->posted_audio_time, e->audio_time, memory_order_relaxed);
         }
         
 

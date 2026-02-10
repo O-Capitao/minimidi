@@ -82,14 +82,14 @@ int main( int argc, char *argv[] )
 
     // transport
     MM_Ring_Buffer *cmd_queue = MM_Ring_Buffer__init(128, sizeof(MM_AudioCommand));
-
+    MM_AudioEngine eng;
+    MM_AudioEngine_init(&eng, cmd_queue, midi_file );
     MM_TUI *ui = (MM_TUI*)malloc( sizeof( MM_TUI ) );
-    MM_TUI_init(ui, midi_file, cmd_queue );
+    MM_TUI_init(ui, midi_file, cmd_queue, &eng );
 
     int ERRSTATUS = 0;
 
-    MM_AudioEngine eng;
-    MM_AudioEngine_init(&eng, cmd_queue, midi_file );
+
 
     /**
      * MAIN LOOP

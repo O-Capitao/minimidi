@@ -58,13 +58,14 @@ typedef struct MM_TUI
 
     // transport to audio thread
     MM_Ring_Buffer *cmd_queue;
+    MM_AudioEngine *audio_engine;
 
 } MM_TUI;
 
 /***
  *  "class" methods:    
  */
-int MM_TUI_init   ( MM_TUI *self, MM_File *file, MM_Ring_Buffer *cmd_queue );
+int MM_TUI_init   ( MM_TUI *self, MM_File *file, MM_Ring_Buffer *cmd_queue, MM_AudioEngine *audio_engine );
 int MM_TUI_step   ( MM_TUI *self );
 int MM_TUI_render ( MM_TUI *self );
 int MM_TUI_destroy( MM_TUI *self );

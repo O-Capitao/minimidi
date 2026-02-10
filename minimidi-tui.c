@@ -533,7 +533,7 @@ int _midi_tick_to_ms( int tick, int bpm, int ppqn ){
 /**
  * PUBLIC
  */
-int MM_TUI_init( MM_TUI *self, MM_File *file, MM_Ring_Buffer *cmd_queue )
+int MM_TUI_init( MM_TUI *self, MM_File *file, MM_Ring_Buffer *cmd_queue, MM_AudioEngine *audio_engine )
 {
     self->is_dirty = false;
     self->is_running = true;
@@ -590,9 +590,9 @@ int MM_TUI_init( MM_TUI *self, MM_File *file, MM_Ring_Buffer *cmd_queue )
     self->delta_ticks = (1000 * self->bpm * self->file->header->ppqn) / ( 60000 * self->fps );
     self->_cursor_position_ticks = 0;
     self->cmd_queue = cmd_queue;
+    self->audio_engine = audio_engine;
 
     if ( _init_ncurses(self) ) return 1;
-
 
     log_debug("TUI Init: done");
 
@@ -650,6 +650,10 @@ int MM_TUI_step( MM_TUI *self ){
 
     assert(self->delta_t_ms > (1000 * ellapsed_s));
     log_trace("Worked for %g s", ellapsed_s);
+
+    if (self->is_playing){
+        self->playback_time = atomic_load_explicit(&self->audio_engine->posted_audio_time, memory_order_relaxed);
+    }
 
     usleep((self->delta_t_ms * 1000) - ellapsed_s * 1000000);
     

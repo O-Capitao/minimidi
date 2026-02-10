@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <assert.h>
 #include <portaudio.h>
+#include <stdatomic.h>     // C11
 
 #include "minimidi-log.h"
 #include "minimidi-rb.h"
@@ -62,6 +63,7 @@ typedef struct MM_AudioEngine {
     bool playing;
     MM_Ring_Buffer *cmd_queue;   // UI → audio commands
     PaStream *pa_st;
+    _Atomic(double) posted_audio_time;
 } MM_AudioEngine;
 
 
