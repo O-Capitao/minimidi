@@ -5,7 +5,7 @@
 #include <stdlib.h>
 
 #define PI 3.14159265358979323846
-#define BUFFER_SIZE 4096
+#define BUFFER_SIZE 1024
 
 // note_i is the number of the note, starting from C0
 float _calc_tempered_freq( int note_i ){
@@ -18,79 +18,105 @@ static int paStreamCallback( const void *inputBuffer,
                             const PaStreamCallbackTimeInfo* timeInfo,
                             PaStreamCallbackFlags statusFlags,
                             void *_my_data ){
-
-    // MM_Ring_Buffer *rb = (MM_Ring_Buffer*)_my_data;
-    MM_Ring_Buffer *rb = (MM_Ring_Buffer *)_my_data;
+    
+    MM_AudioEngine *e = (MM_AudioEngine*)_my_data;
     float *out = (float*)outputBuffer;
-    (void) inputBuffer;
 
-    MM_Ring_Buffer__pop_n( rb , out, frames_per_buffer );
+    // process Cmd Buff
+    MM_AudioCommand _cmd;
+    while (!MM_Ring_Buffer__is_empty(e->cmd_queue)){
+        MM_Ring_Buffer__pop(e->cmd_queue, &_cmd);
+        if (_cmd.cmd_type == MM_CMD_PLAY){
+            e->playing = true;
+        } else if(_cmd.cmd_type == MM_CMD_PAUSE){
+            e->playing = false;
+        } else if(_cmd.cmd_type == MM_CMD_STOP){
+            e->playing = false;
+        } else if(_cmd.cmd_type == MM_CMD_BACK_TO_BEGINING){
+            e->audio_time = 0;
+        } else {
+            // not good.
+        }
+    }
+
+    if (e->playing){
+        // process midi
+        // is the synth on note_on mode?
+        // double _cycle_t = e->audio_time;
+        for (size_t i = 0; i < BUFFER_SIZE; i++){
+            
+            // check if Synth state needs to change
+            double _nxt_evt_t = MM_Util_tick_to_s(e->nxt_evt->abs_ticks, e->bpm, e->midi_file->header->ppqn);
+
+            if (_nxt_evt_t <= e->audio_time) {
+                // event has occured
+                if (e->nxt_evt->status_code == MIDI_NOTE_OFF) {
+                    e->synth.note_on = false;
+                } else if (e->nxt_evt->status_code == MIDI_NOTE_ON){
+                    e->synth.note_on = true;
+                    e->synth.active_note = &(e->nxt_evt->note);
+                }
+
+                e->nxt_evt = e->nxt_evt->next;
+            }
+
+            out[i] = MM_Synth_next_sample( &(e->synth), e->audio_time);
+            
+            e->audio_time += e->delta_t;
+        }
+        
+
+
+    } else {
+        // fill buff with zeros and carry on
+        for (size_t i = 0; i < BUFFER_SIZE; i++){
+            out[i] = 0.0;
+        }
+    }
+
 
     return 0;
 }
 
-MM_Synth *MM_Synth_init( MM_Event *track_events, size_t total_events ){
+int MM_AudioEngine_init(MM_AudioEngine *s, MM_Ring_Buffer *cmd_queue, MM_File *file ){
+    log_debug("MM_AudioEngine_init: entering");
+    
+    s->sample_rate = AUDIO_FRAMERATE;
+    s->audio_time = 0;
+    s->delta_t = 1.0 / AUDIO_FRAMERATE;
+    s->cmd_queue = cmd_queue;
+    s->midi_file = file;
+    s->nxt_evt = &(file->track->event_arr[0]);
+    s->playing = false;
 
-    log_debug("minimidi-audio.c > MM_Synth_init : entering.");
-
-    MM_Synth* s = (MM_Synth*)malloc(sizeof(MM_Synth));
-
-    // init memory
-    s->n_oscilators = 1;
-    s->t = 0;
-    s->delta_t = 1.00 / (float)AUDIO_FRAMERATE;
-    s->rb = MM_Ring_Buffer__init( BUFFER_SIZE );
-
-    // init Portaudio
+    MM_Synth_init(&(s->synth));
+    
+    // init portaudio
     if ( Pa_Initialize() != paNoError){    
-        return NULL;
+        return 1;
     }
-
-    // dump PortAudio datagem,
-
-
-    // open stream
     PaError e = Pa_OpenDefaultStream(
-        &(s->pa_stream),
+        &(s->pa_st),
         0,
         N_CHANNELS,
         paFloat32,
         AUDIO_FRAMERATE,
         BUFFER_SIZE,
         paStreamCallback,
-        s->rb
+        s
     );
 
     if (e != paNoError){
-        return NULL;
+        return 1;
     }
 
-    e = Pa_StartStream(s->pa_stream);
+    e = Pa_StartStream(s->pa_st);
 
     if (e != paNoError){
-        return NULL;
+        return 1;
     }
 
-    // init note freqs
-    for (int i = 0; i < NOTE_RANGE; i++){
-        s->tempered_freqs[i] = _calc_tempered_freq( i );
-    }
-
-    // init oscillators
-    // add multiple oscillator supp.
-    for (int i = 0; i < s->n_oscilators; i++){
-        s->oscillators[i].amp = 0.5;
-        s->oscillators[i].theta = 0;
-        s->oscillators[i].phase = 0;
-        s->oscillators[i].is_active = false;
-        s->oscillators[i].dtheta = (2* PI ) / ((float) AUDIO_FRAMERATE);
-    }
-
-    s->is_playing = false;
-    s->active_note = NULL;
-
-
-    const PaStreamInfo *sInfo = Pa_GetStreamInfo(s->pa_stream);
+    const PaStreamInfo *sInfo = Pa_GetStreamInfo(s->pa_st);
     if (!sInfo) {
         log_error("Error: Could not retrieve stream info.");
         return 0;
@@ -116,100 +142,63 @@ MM_Synth *MM_Synth_init( MM_Event *track_events, size_t total_events ){
              sInfo->inputLatency * 1000.0);
 
     log_debug("minimidi-audio.c > MM_Synth_init : exiting.");
-
-    return s;
+    return 0;
 }
 
-
-
-int MM_Synth_destroy( MM_Synth *s ){
-
-    // todo: reenable after start / stop logic is in
-    PaError e = Pa_StopStream(s->pa_stream);
+int MM_AudioEngine_destroy( MM_AudioEngine *self ) {
+    PaError e = Pa_StopStream(self->pa_st);
 
     if (e != paNoError){
         return 1;
     }
 
-    e = Pa_CloseStream(s->pa_stream);
+    e = Pa_CloseStream(self->pa_st);
 
     if (e != paNoError){
         return 1;
     }
 
-    s->pa_stream = NULL;
-    free(s);
-
-    return 0; 
+    self->pa_st = NULL;
+    return 0;
 }
+void MM_Synth_init(MM_Synth *s){
 
-float _produce_val( MM_Synth *s ){
-    if (s->active_note && s->is_playing){
+    log_info("MM_Synth_init: Entering.");
+    s->n_oscillators = 1;
+        // init note freqs
+    for (int i = 0; i < NOTE_RANGE; i++){
+        s->tempered_freqs[i] = _calc_tempered_freq( i );
+    }
+
+    s->note_on = false;
+    s->active_note = NULL;
+
+    // just 1 for now, more to come for more fx / tones
+    for (int i = 0; i < s->n_oscillators; i++){
+        s->oscillators[i].amp = 0.5;
+        s->oscillators[i].theta = 0;
+        s->oscillators[i].phase = 0;
+        s->oscillators[i].is_active = false;
+        s->oscillators[i].dtheta = (2* PI ) / ((float) AUDIO_FRAMERATE);
+    }
+
+
+}
+void MM_Synth_note_on (MM_Synth *s, MidiNote *_n){
+    s->active_note = _n;
+    s->note_on = true;
+}
+void MM_Synth_note_off(MM_Synth *s,  MidiNote *_n){
+    s->note_on = false;
+}
+float MM_Synth_next_sample(MM_Synth *s, double t){
+    if (s->note_on){
         float freq = s->tempered_freqs[ 12 * s->active_note->octave + (int)s->active_note->note ];
         float period = 1.0 / freq;
-        float t_in_period = fmodf( s->t, period );
+        float t_in_period = fmodf( t, period );
         float retval = t_in_period / period > 0.5 ? 0 : 0.3333;
 
         return retval;
     }
-    return 0;
-}
-// fill the output_arr with zeros
-//
-int _produce_values( MM_Synth *s, size_t n_to_produce, float *output_arr ){
-
-    log_trace("minimidi-audio.c > _produce_values > producing %li values.", n_to_produce);
-
-    float _val;
-    for (size_t i = 0; i < n_to_produce; i++){
-        _val = _produce_val( s );
-        output_arr[i] = _val;
-        // update state
-        s->t += s->delta_t;
-    }
-    return 0;
-}
-
-// aux
-float _SYNTH_BUFFER[BUFFER_SIZE];
-
-int MM_Synth_step( MM_Synth *s ){
-
-    // write to buffer
-    size_t _space_in_buffer = MM_Ring_Buffer__get_free_space( s->rb );
-    log_debug("minimidi-audio.c > MM_Synth_step > entering, free space is %li", _space_in_buffer);
-
-    if (_space_in_buffer){
-
-        assert(_space_in_buffer <= BUFFER_SIZE);
-
-        _produce_values( s, _space_in_buffer, _SYNTH_BUFFER );
-        
-        for (int i = 0; i < _space_in_buffer; i+=100) {
-            log_debug("_SYNTH_BUFFER[%d] = %f", i, _SYNTH_BUFFER[i]);
-        }
-
-        MM_Ring_Buffer__push_n(s->rb, _SYNTH_BUFFER, _space_in_buffer);
-    }
-
-    return 0;
-}
-
-int MM_Synth_press_key( MM_Synth *s, MidiNote *n ){
-    if (!s->active_note){
-        s->active_note = n;
-        return 0;
-    }
-    if (n->note != s->active_note->note || n->octave != s->active_note->octave ){
-        s->active_note = n;
-    }
-
-    return 0;
-}
-
-int MM_Synth_release_key( MM_Synth *s, MidiNote *n ){
-    // if (n->note == s->active_note->note || n->octave != s->active_note->octave ){
-        s->active_note = NULL;
-    // }
     return 0;
 }

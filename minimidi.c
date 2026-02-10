@@ -836,7 +836,6 @@ int _emptyList( MM_Event_LList* self )
     self->first = NULL;
     self->last = NULL;
     self->length = 0;
-    
     return 0;
 }
 
@@ -881,3 +880,6 @@ int MM_Event_LList_from_array( MM_Event_LList *list, MM_Event *array, size_t n_e
     return 0;
 }
 
+double MM_Util_tick_to_s(unsigned int ticks, unsigned short bpm, unsigned int ppqn) {
+    return (double)bpm * (double)ticks * (double)ppqn / 60;
+}

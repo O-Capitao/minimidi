@@ -5,7 +5,9 @@
 #include "globals.h"
 #include "minimidi.h"
 #include "minimidi-tui.h"
+#include "minimidi-audio.h"
 #include "minimidi-log.h"
+#include "minimidi-transport.h"
 
 #define ARG_MAX_LEN 100
 
@@ -72,17 +74,22 @@ int main( int argc, char *argv[] )
 
     // Read the file passed in by arg
     MM_File *midi_file = MM_File_init( argv[1] );
- 
     if (midi_file == NULL) {
         log_error("Failed to read MIDI file: %s", argv[1]);
         printf(RED "ERROR" RESET " Failed to read MIDI file: %s\n", argv[1]);
         return 1;
     }
 
+    // transport
+    MM_Ring_Buffer *cmd_queue = MM_Ring_Buffer__init(128, sizeof(MM_AudioCommand));
+
     MM_TUI *ui = (MM_TUI*)malloc( sizeof( MM_TUI ) );
-    MM_TUI_init(ui, midi_file );
+    MM_TUI_init(ui, midi_file, cmd_queue );
 
     int ERRSTATUS = 0;
+
+    MM_AudioEngine eng;
+    MM_AudioEngine_init(&eng, cmd_queue, midi_file );
 
     /**
      * MAIN LOOP

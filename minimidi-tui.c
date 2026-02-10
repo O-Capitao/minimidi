@@ -73,9 +73,6 @@ int _update_sizes( MM_TUI *self )
     self->logical_size[0] = self->grid_size[0] * self->ticks_per_col;
     self->logical_size[1] = ( self->grid_size[1] - 2 ) / LINES_PER_SEMITONE;
 
-    // calc movement increment
-    // self->move_increment = self->logical_size[0] / 4; // the naughty plus one because integer arithmetic is hard
-
     // move increment is always one bar, figure oput later how to handle cleanly
     self->move_increment = 2 * self->file->header->ppqn;
 
@@ -231,10 +228,12 @@ int _handle_input( MM_TUI *self )
             break;
         // PLAY THAT FUNKY MUSIC WHITE BOY
         case ' ':
-
             log_debug("minimidi-tui.c > _handle_input() : pressed SPACE");
-
             self->is_playing = !self->is_playing;
+            MM_AudioCommand cmd;
+            cmd.cmd_type = self->is_playing ?
+                MM_CMD_PLAY : MM_CMD_PAUSE;
+            MM_Ring_Buffer__push( self->cmd_queue, &cmd );
 
              break;
         case 'q':
@@ -321,9 +320,7 @@ int _draw_bar_label( MM_TUI *self, int bar_n, int line_index, int col_index ){
 
 
 int _render_grid( MM_TUI *self ){
-
-
-    
+   
     int err;
     int line_index, aux_line_index, beat_counter, bar_counter, col_in_grid;
     int ppqn = self->file->header->ppqn;
@@ -486,13 +483,13 @@ int _render_midi( MM_TUI *self )
 int _render_playback( MM_TUI *self ){
 
     static char aux_str[50];
-    int _lines, _cols, _off_line, _off_col;
+    int _lines, _cols;
 
     if (self->is_playing){
         
         //get size of playback derwin
         getmaxyx( self->playback_derwin, _lines, _cols);
-        getbegyx( self->playback_derwin, _off_line, _off_col );
+        // getbegyx( self->playback_derwin, _off_line, _off_col );
         
         // make a run of clear
         for (int i = 0; i < _cols; i++){
@@ -536,7 +533,7 @@ int _midi_tick_to_ms( int tick, int bpm, int ppqn ){
 /**
  * PUBLIC
  */
-int MM_TUI_init( MM_TUI *self, MM_File *file )
+int MM_TUI_init( MM_TUI *self, MM_File *file, MM_Ring_Buffer *cmd_queue )
 {
     self->is_dirty = false;
     self->is_running = true;
@@ -592,12 +589,10 @@ int MM_TUI_init( MM_TUI *self, MM_File *file )
     self->delta_t_ms = 1000 /  self->fps;
     self->delta_ticks = (1000 * self->bpm * self->file->header->ppqn) / ( 60000 * self->fps );
     self->_cursor_position_ticks = 0;
+    self->cmd_queue = cmd_queue;
 
     if ( _init_ncurses(self) ) return 1;
 
-    // init audio
-    // self->synth = MM_Synth_init( file->track->event_arr );
-    self->evts_in_buffer = 0;
 
     log_debug("TUI Init: done");
 
@@ -643,53 +638,19 @@ int MM_TUI_step( MM_TUI *self ){
     double ellapsed_s;
 
     step_start = clock();
-    double time_in_seconds = (double)step_start / (double)CLOCKS_PER_SEC;
-    log_debug("Entering MM_TUI_step at %g s", time_in_seconds);
+    log_debug("Entering MM_TUI_step.");
 
     // get input
     _handle_input( self );
     _update_sizes( self );
     MM_TUI_render( self );
 
-    // set synth state
-    // self->synth->is_playing = self->is_playing;
-
-    if (self->is_playing){
-
-        self->playback_time += self->delta_t_ms;
-        
-        // step Synth
-        MM_File_get_event_at_s( self->file, self->midi_events_audio_list, (float)self->playback_time / 1000.0, (float)self->delta_t_ms / 1000.0 );
-
-        MM_Event_LList_Node *_n = self->midi_events_audio_list->first;
-        // // start processing events
-        // while (_n ){
-        //     if (_n->value->status_code == MIDI_NOTE_ON){
-        //         MM_Synth_press_key( self->synth, &(_n->value->note));
-        //     } else if (_n->value->status_code == MIDI_NOTE_OFF){
-        //         MM_Synth_release_key( self->synth, &(_n->value->note));
-        //     }
-        //     _n = _n->next;
-        // }
-
-        // MM_Synth_step(self->synth);
-
-        #if DEBUG
-            if (_debug_step_cntr == 5){
-                log_debug("minimidi-tui.c > MM_TUI_step() : step logic took %f ms.",
-                    ellapsed);
-            }
-        #endif
-    }
-
     step_end = clock();
     ellapsed_s = (double)(step_end - step_start) / (double)CLOCKS_PER_SEC;
 
     assert(self->delta_t_ms > (1000 * ellapsed_s));
-    log_debug("Worked for %g s", ellapsed_s);
+    log_trace("Worked for %g s", ellapsed_s);
 
-
-    // sleep( (self->delta_t_ms / 1000.0) - ellapsed_s);
     usleep((self->delta_t_ms * 1000) - ellapsed_s * 1000000);
     
     return 0;

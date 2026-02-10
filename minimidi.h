@@ -82,7 +82,7 @@ typedef struct MM_Track
 {
     size_t          length;
     size_t          n_events;
-    MM_Event *event_arr;
+    MM_Event       *event_arr;
     size_t          total_ticks,
                     total_beats;
 } MM_Track;
@@ -134,7 +134,7 @@ typedef struct MM_File
     MM_Track        *track;
     unsigned short   bpm;
     size_t           length;
-    MM_Event_LList  *events;
+    MM_Event_LList  *events; // for use by UI
 
 } MM_File;
 
@@ -143,5 +143,8 @@ void           MM_File_free                 ( MM_File *file );
 unsigned short MM_File_get_bpm              ( MM_File *file );
 int            MM_File_get_event_at_s       ( MM_File *file, MM_Event_LList *container, float s, float delta_t );
 int            MM_File_get_events_in_range  ( MM_File *file, MM_Event_LList *list, int start_ticks, int end_ticks, int start_note, int end_note );
+
+/* MM Utils*/
+double MM_Util_tick_to_s(unsigned int ticks, unsigned short bpm, unsigned int ppqn) ;
 
 #endif /* MM_H */
