@@ -30,20 +30,16 @@ typedef struct MM_TUI
         is_playing,          // is playback and continuous scroll happening?
         is_render_requested; // if not playing, is it necessary to re-render?
 
-    int bpm;
-
-    // playback
-    int playback_time,
-        playback_midi_ticks,
-        playback_end_tick,
+    unsigned int bpm,
         fps,
-        // playback_step_time_ms,
-        playback_total_time_ms;
+        delta_ticks,         // when playing, how many ticks does the cursor
+                             // move in one UI frame?
+                             //     1 UI frame = (1/fps) s
+                             //     1 s = ? ticks
+        cursor_position_ticks;
 
-    int delta_ticks,
-        delta_t_ms;
-
-    int _cursor_position_ticks;
+    double playback_time,
+        delta_t;
 
     // opened midi file
     MM_File *file;
@@ -65,7 +61,7 @@ typedef struct MM_TUI
 /***
  *  "class" methods:    
  */
-int MM_TUI_init   ( MM_TUI *self, MM_File *file, MM_Ring_Buffer *cmd_queue, MM_AudioEngine *audio_engine );
+int MM_TUI_init   ( MM_TUI *self, MM_File *file, MM_Ring_Buffer *cmd_queue, MM_AudioEngine *audio_engine, unsigned int bpm );
 int MM_TUI_step   ( MM_TUI *self );
 int MM_TUI_render ( MM_TUI *self );
 int MM_TUI_destroy( MM_TUI *self );

@@ -82,10 +82,16 @@ int main( int argc, char *argv[] )
 
     // transport
     MM_Ring_Buffer *cmd_queue = MM_Ring_Buffer__init(128, sizeof(MM_AudioCommand));
+
+
+    // todo: 
+    // dynamic bpm, for now, defined here
+    unsigned int bpm = 120;
+
     MM_AudioEngine eng;
-    MM_AudioEngine_init(&eng, cmd_queue, midi_file );
+    MM_AudioEngine_init(&eng, cmd_queue, midi_file, bpm );
     MM_TUI *ui = (MM_TUI*)malloc( sizeof( MM_TUI ) );
-    MM_TUI_init(ui, midi_file, cmd_queue, &eng );
+    MM_TUI_init(ui, midi_file, cmd_queue, &eng, bpm );
 
     int ERRSTATUS = 0;
 

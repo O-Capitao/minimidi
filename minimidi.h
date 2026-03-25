@@ -114,7 +114,6 @@ int             MM_Event_LList_destroy      ( MM_Event_LList *self );
 
 int             MM_Event_LList_from_array   ( MM_Event_LList *list, MM_Event *array, size_t n_events );
 void            MM_Event_LList__print_to_str( MM_Event_LList *list, char *output );
-// void MM_Event_to_string_log( MM_Event *me, char *str );
 
 
 
@@ -141,10 +140,11 @@ typedef struct MM_File
 MM_File       *MM_File_init                 ( char *file_path );
 void           MM_File_free                 ( MM_File *file );
 unsigned short MM_File_get_bpm              ( MM_File *file );
-int            MM_File_get_event_at_s       ( MM_File *file, MM_Event_LList *container, float s, float delta_t );
+// int            MM_File_get_event_at_s       ( MM_File *file, MM_Event_LList *container, float s, float delta_t );
 int            MM_File_get_events_in_range  ( MM_File *file, MM_Event_LList *list, int start_ticks, int end_ticks, int start_note, int end_note );
 
 /* MM Utils*/
-double MM_Util_tick_to_s(unsigned int ticks, unsigned short bpm, unsigned int ppqn) ;
+double       MM_Util_tick_to_s( unsigned int ticks, unsigned short bpm, unsigned int ppqn);
+unsigned int MM_Util_s_to_tick( double t_s, unsigned short bpm, unsigned int ppqn);
 
 #endif /* MM_H */

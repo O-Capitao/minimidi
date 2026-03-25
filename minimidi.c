@@ -6,7 +6,6 @@
 
 #include "minimidi.h"
 
-#define DEBUG 0
 
 
 
@@ -270,9 +269,7 @@ size_t _read_VLQ_delta_t( _Byte *bytes, size_t len, uint64_t *val_ptr)
     size_t _index = 0;
     _Byte _curr_byte;
 
-#if DEBUG
-/* DEBUG IT */ printf(TAB TAB "processing VLQ :: ");
-#endif
+
 
     const _Byte _sign_bit_mask =    0x80; // 0b10000000
     const _Byte _7_last_bits_mask = 0x7F; // 0b01111111
@@ -284,10 +281,7 @@ size_t _read_VLQ_delta_t( _Byte *bytes, size_t len, uint64_t *val_ptr)
         // grab a byte
         _curr_byte = bytes[_index++];
 
-#if DEBUG
-/* DEBUG IT */ print_byte_as_binary(&_curr_byte, 0 );
-/* DEBUG IT */ printf(" ");
-#endif
+
 
         retval<<=7;
         retval += ( _curr_byte & _7_last_bits_mask );
@@ -300,9 +294,7 @@ size_t _read_VLQ_delta_t( _Byte *bytes, size_t len, uint64_t *val_ptr)
 
     *val_ptr = retval;
 
-#if DEBUG
-    printf("processed %li bytes for VLQ.\n", _index);
-#endif
+
 
     return _index;
 }
@@ -322,9 +314,6 @@ void _parse_track_events( MM_Track *track, _Byte *evts_chunk )
     size_t _byte_counter = 0;
     size_t _event_counter = 0;
 
-#if DEBUG
-    size_t _debug_event_byte_count = 0;
-#endif
 
     // Last status byte for running status handling.
     _Byte *_last_status_byte = NULL;
@@ -333,12 +322,6 @@ void _parse_track_events( MM_Track *track, _Byte *evts_chunk )
 
     while ( _byte_counter < track->length )
     {
-
-#if DEBUG
-        /* DEBUG IT */_debug_event_byte_count = _byte_counter;
-        /* DEBUG IT */ printf(BOLDWHITE "Starting grab %lith byte. byte_counter=%li\n" RESET, (_byte_counter + 1), _byte_counter);
-#endif
-
 
         struct MM_Event evt;
 
@@ -350,15 +333,6 @@ void _parse_track_events( MM_Track *track, _Byte *evts_chunk )
         evt.abs_ticks = track->total_ticks;
 
 
-
-#if DEBUG
-        /* DEBUG IT */ printf(BOLDWHITE "Parsed Event number %lu:\n  " RESET CYAN "ticks=%lu\n" RESET, _event_counter, evt.delta_ticks );
-        /* DEBUG IT */ printf(TAB "After moving, counter is at %lu.\n", _byte_counter);      
-        /* DEBUG IT */ printf(TAB TAB "parseEvents::Next Bite is ");
-        /* DEBUG IT */ print_byte_as_binary(evts_chunk + _byte_counter, 0);
-        /* DEBUG IT */ printf("\n");
-#endif
-
         if ( *(evts_chunk + _byte_counter) >= 0x80 )
         {
             // This is a new status byte (has the high bit set)
@@ -368,9 +342,7 @@ void _parse_track_events( MM_Track *track, _Byte *evts_chunk )
 
         } else {
             // No new status byte — use running status
-#if DEBUG
-            /* DEBUG IT */ printf( TAB TAB RED "Status is Running!\n" RESET );
-#endif
+
 
             evt.status_code = _get_midi_status_code(_last_status_byte);
             // Note: byte_counter not incremented here, since there's no status byte.
@@ -380,32 +352,19 @@ void _parse_track_events( MM_Track *track, _Byte *evts_chunk )
             printf(RED "Invalid status byte detected — aborting!\n" RESET);
             return;
         }
-#if DEBUG
-        /* DEBUG IT */ printf( TAB TAB GREEN "Status Code: " RESET );
-         /* DEBUG IT */ _print_midi_status_code( evt.status_code );
-#endif
+
          _data_bytes_count = _get_midi_data_byte_count( evt.status_code );
-#if DEBUG
-        /* DEBUG IT */ printf( TAB TAB "Event has %li data bytes: " RESET, _data_bytes_count);
-#endif
-        
- 
-        // extract databytes
+
+         // extract databytes
         // when do we care?
         //  when evt is a Note On, and never elses
         if (evt.status_code == MIDI_NOTE_ON || evt.status_code == MIDI_NOTE_OFF)
         {
             evt.note = _event_data_bytes_to_note(*(evts_chunk + _byte_counter));
-#if DEBUG
-            _print_midi_note(evt.note);
-            printf("\n");
-#endif
+
         }
         _byte_counter += _data_bytes_count;
-#if DEBUG
-        /* DEBUG IT */ printf(TAB TAB "Event Size in Bytes: %li\n", (_byte_counter - _debug_event_byte_count));
-        /* DEBUG IT */ printf(TAB TAB "Finishing %linth loop, byte_counter=%li.\n\n\n", _event_counter, _byte_counter);
-#endif
+
         track->event_arr[_event_counter ++] = evt;
 
     }
@@ -680,7 +639,6 @@ MM_File * MM_File_init( char *file_path )
     fileptr = fopen( file_path, "rb" );
     _Byte * buffer = 0;
     size_t length;
-    // retval->logger = l_i;
 
     int freadres = 0;
     
@@ -709,9 +667,6 @@ MM_File * MM_File_init( char *file_path )
     
     free( buffer );
 
-    // logging
-    // char note_name[5];
-    
     log_info(
         "MM_File : parsed %s : %ld bytes, got %ld events.",
         file_path,
@@ -724,19 +679,6 @@ MM_File * MM_File_init( char *file_path )
         retval->header->length,
         retval->header->ppqn );
     
-    // #if DEBUG
-    //     for (int i = 0; i < retval->track->n_events; i++ )
-    //     {
-    //         // parse note name:
-    //         _midi_note_to_str( retval->track->event_arr[i].note , note_name);
-
-    //         log_trace(
-    //             "MM_Track: Evt: %i, at (ticks=%li, note=%s)",
-    //             i,
-    //             retval->track->event_arr[i].abs_ticks,
-    //             note_name );
-    //     }
-    // #endif
     retval->bpm = 120;
 
     retval->events = MM_Event_LList_init();
@@ -747,19 +689,6 @@ MM_File * MM_File_init( char *file_path )
 
 unsigned short MM_File_get_bpm( MM_File *f ){
     return f->bpm;
-}
-
-size_t _sec_to_ticks( MM_File *f, float s ){
-    return (size_t)round(s * round( (float)(f->bpm) / 60.0 ) * (float)f->header->ppqn);    
-}
-
-int MM_File_get_event_at_s( MM_File *file, MM_Event_LList *container, float s, float delta_t ){
-
-    size_t _tick_start = _sec_to_ticks( file, s );
-    size_t _tick_end = _tick_start + _sec_to_ticks( file, delta_t );
-
-    MM_File_get_events_in_range(file, container, _tick_start, _tick_end, 0, 96 );
-    return 0;
 }
 
 MM_Event_LList *MM_Event_LList_init()
@@ -881,5 +810,9 @@ int MM_Event_LList_from_array( MM_Event_LList *list, MM_Event *array, size_t n_e
 }
 
 double MM_Util_tick_to_s(unsigned int ticks, unsigned short bpm, unsigned int ppqn) {
-    return (double)bpm * (double)ticks * (double)ppqn / 60;
+    return ( 60 * (double)ticks ) / ((double)ppqn * (double)bpm );
+}
+
+unsigned int MM_Util_s_to_tick(double t_s, unsigned short bpm, unsigned int ppqn) {
+    return (unsigned int)floor( (t_s * (double)bpm ) / ( 60 * (double)ppqn) );
 }

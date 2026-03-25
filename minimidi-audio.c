@@ -46,29 +46,30 @@ static int paStreamCallback( const void *inputBuffer,
         for (size_t i = 0; i < BUFFER_SIZE; i++){
             
             // check if Synth state needs to change
-            double _nxt_evt_t = MM_Util_tick_to_s(e->nxt_evt->abs_ticks, e->bpm, e->midi_file->header->ppqn);
-
+            MM_Event *nxt_evt = e->nxt_node->value;
+            double _nxt_evt_t = MM_Util_tick_to_s( nxt_evt->abs_ticks, e->bpm, e->midi_file->header->ppqn);
+            
             if (_nxt_evt_t <= e->audio_time) {
                 // event has occured
-                if (e->nxt_evt->status_code == MIDI_NOTE_OFF) {
+                if (nxt_evt->status_code == MIDI_NOTE_OFF) {
+                    log_debug("paStreamCallback: MIDI_NOTE_OFF at %f s .", _nxt_evt_t );
                     e->synth.note_on = false;
-                } else if (e->nxt_evt->status_code == MIDI_NOTE_ON){
+                } else if (nxt_evt->status_code == MIDI_NOTE_ON){
+                    log_debug("paStreamCallback: MIDI_NOTE_ON at %f s .", _nxt_evt_t );
                     e->synth.note_on = true;
-                    e->synth.active_note = &(e->nxt_evt->note);
+                    e->synth.active_note = &(nxt_evt->note);
                 }
 
-                e->nxt_evt = e->nxt_evt->next;
+                e->nxt_node = e->nxt_node->next;
             }
 
             out[i] = MM_Synth_next_sample( &(e->synth), e->audio_time);
             
             e->audio_time += e->delta_t;
 
-            // post for other threads to see (UI )
-            atomic_store_explicit(&e->posted_audio_time, e->audio_time, memory_order_relaxed);
         }
-        
-
+        // post for other threads to see (UI )
+        atomic_store_explicit(&e->posted_audio_time, e->audio_time, memory_order_relaxed);
 
     } else {
         // fill buff with zeros and carry on
@@ -81,7 +82,7 @@ static int paStreamCallback( const void *inputBuffer,
     return 0;
 }
 
-int MM_AudioEngine_init(MM_AudioEngine *s, MM_Ring_Buffer *cmd_queue, MM_File *file ){
+int MM_AudioEngine_init(MM_AudioEngine *s, MM_Ring_Buffer *cmd_queue, MM_File *file, unsigned int bpm ){
     log_debug("MM_AudioEngine_init: entering");
     
     s->sample_rate = AUDIO_FRAMERATE;
@@ -89,8 +90,9 @@ int MM_AudioEngine_init(MM_AudioEngine *s, MM_Ring_Buffer *cmd_queue, MM_File *f
     s->delta_t = 1.0 / AUDIO_FRAMERATE;
     s->cmd_queue = cmd_queue;
     s->midi_file = file;
-    s->nxt_evt = &(file->track->event_arr[0]);
+    s->nxt_node = file->events->first;
     s->playing = false;
+    s->bpm = bpm;
 
     MM_Synth_init(&(s->synth));
     

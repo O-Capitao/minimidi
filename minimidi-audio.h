@@ -55,7 +55,7 @@ float MM_Synth_next_sample(MM_Synth *s, double t);
 typedef struct MM_AudioEngine {
     MM_Synth synth;
     MM_File *midi_file;
-    MM_Event *nxt_evt;
+    MM_Event_LList_Node *nxt_node;
     double sample_rate;
     double audio_time;
     double delta_t;
@@ -67,7 +67,7 @@ typedef struct MM_AudioEngine {
 } MM_AudioEngine;
 
 
-int MM_AudioEngine_init( MM_AudioEngine *self, MM_Ring_Buffer *cmd_queue, MM_File *file );
+int MM_AudioEngine_init( MM_AudioEngine *self, MM_Ring_Buffer *cmd_queue, MM_File *file, unsigned int bpm );
 int MM_AudioEngine_destroy( MM_AudioEngine *self );
 
 #endif // MM_TUI_AUDIO

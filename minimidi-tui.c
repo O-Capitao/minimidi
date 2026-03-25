@@ -78,9 +78,9 @@ int _update_sizes( MM_TUI *self )
 
 
     if (self->is_playing){
-        self->_cursor_position_ticks += self->delta_ticks;
+        self->cursor_position_ticks += self->delta_ticks;
         // move the screen if needed
-        if ( self->_cursor_position_ticks >= self->logical_start[0] + self->logical_size[0] / 2 ){
+        if ( self->cursor_position_ticks >= self->logical_start[0] + self->logical_size[0] / 2 ){
             self->logical_start[0] += self->delta_ticks;
         }
     } else {
@@ -216,7 +216,7 @@ int _handle_input( MM_TUI *self )
             }
 
             if (!self->is_playing){
-                self->_cursor_position_ticks = self->logical_start[0];
+                self->cursor_position_ticks = self->logical_start[0];
             }
 
             break;
@@ -339,8 +339,8 @@ int _render_grid( MM_TUI *self ){
         
         assert(line_index > 0 && line_index < self->grid_size[1]);
         
-        aux_line_index = line_index - 1;        // where bar delimiters are drawed into
-        beat_counter = self->logical_start[0] / ppqn;  // keep track of actual beats, not just cols
+        aux_line_index = line_index - 1;                // where bar delimiters are drawed into
+        beat_counter = self->logical_start[0] / ppqn;  //  keep track of actual beats, not just cols
         bar_counter = 0;
         
         // cycle through drawable cols
@@ -388,7 +388,7 @@ int _render_grid( MM_TUI *self ){
         }
     }
 
-    // // finish by drawing the label for BAR 1 if it's visible
+    // finish by drawing the label for BAR 1 if it's visible
     if (self->logical_start[0] % (4 * self->file->header->ppqn) == 0 ){
         _draw_bar_label( 
             self, 
@@ -489,7 +489,6 @@ int _render_playback( MM_TUI *self ){
         
         //get size of playback derwin
         getmaxyx( self->playback_derwin, _lines, _cols);
-        // getbegyx( self->playback_derwin, _off_line, _off_col );
         
         // make a run of clear
         for (int i = 0; i < _cols; i++){
@@ -500,7 +499,7 @@ int _render_playback( MM_TUI *self ){
 
         // draw stuff now :)
         box(self->playback_derwin, '|', '=');
-        snprintf( aux_str, 50, "t=%i ms", self->playback_time );
+        snprintf( aux_str, 50, "t=%f s", self->playback_time );
 
         mvwprintw(self->playback_derwin, 1, 3, "-PLAYING-");
         mvwprintw(self->playback_derwin, 2, 3, aux_str);
@@ -509,7 +508,7 @@ int _render_playback( MM_TUI *self ){
         // knowing that time = something
 
         // get position
-        int tgt_col = GRID_LEFT_LABELS_WIDTH + ( (self->_cursor_position_ticks - self->logical_start[0]) / self->ticks_per_col );
+        int tgt_col = GRID_LEFT_LABELS_WIDTH + ( (self->cursor_position_ticks - self->logical_start[0]) / self->ticks_per_col );
 
         wattron( stdscr, COLOR_PAIR(2));
         mvwaddch( stdscr, self->outer_size[1] - 5, tgt_col, '^' );
@@ -521,19 +520,10 @@ int _render_playback( MM_TUI *self ){
     return 0;
 }
 
-/******
- *   120     ->    60 * 1000
- *   beat ->     x
- *   
- *   x = beat * 60 * 1000 / bpm
- */
-int _midi_tick_to_ms( int tick, int bpm, int ppqn ){
-    return (tick * 60000) / ( ppqn * bpm );
-}
 /**
  * PUBLIC
  */
-int MM_TUI_init( MM_TUI *self, MM_File *file, MM_Ring_Buffer *cmd_queue, MM_AudioEngine *audio_engine )
+int MM_TUI_init( MM_TUI *self, MM_File *file, MM_Ring_Buffer *cmd_queue, MM_AudioEngine *audio_engine, unsigned int bpm )
 {
     self->is_dirty = false;
     self->is_running = true;
@@ -563,32 +553,19 @@ int MM_TUI_init( MM_TUI *self, MM_File *file, MM_Ring_Buffer *cmd_queue, MM_Audi
     self->file = file;
     self->midi_events_screen_list = MM_Event_LList_init();
     self->midi_events_audio_list = MM_Event_LList_init();
-    // TODO:
-    // what here? display not smooth at lower franerates
-    self->fps = 30;
+    self->fps = 15;
 
     // INIT PLAYBACK STUFF
     self->playback_time = 0;
-    self->playback_midi_ticks = 0;
     
-    self->playback_end_tick = __calc_end_of_playback(
-        self->file->track->total_ticks, 
-        self->file->header->ppqn,
-        self->beats_in_bar );
-    
-    // TODO: make bpm smarter, settable
-    // for now: 120 only lol
-    self->bpm = 120;
-    
-    self->playback_total_time_ms = _midi_tick_to_ms(
-        self->playback_end_tick,
-        self->bpm,
-        self->file->header->ppqn
-    );
+    self->bpm = bpm;
 
-    self->delta_t_ms = 1000 /  self->fps;
+    self->delta_t = 1.0 /  (double)self->fps;
+
+    // TODO: check this
     self->delta_ticks = (1000 * self->bpm * self->file->header->ppqn) / ( 60000 * self->fps );
-    self->_cursor_position_ticks = 0;
+
+    self->cursor_position_ticks = 0;
     self->cmd_queue = cmd_queue;
     self->audio_engine = audio_engine;
 
@@ -648,14 +625,15 @@ int MM_TUI_step( MM_TUI *self ){
     step_end = clock();
     ellapsed_s = (double)(step_end - step_start) / (double)CLOCKS_PER_SEC;
 
-    assert(self->delta_t_ms > (1000 * ellapsed_s));
+    // assert(self->delta_t_ms > (1000 * ellapsed_s));
     log_trace("Worked for %g s", ellapsed_s);
 
     if (self->is_playing){
         self->playback_time = atomic_load_explicit(&self->audio_engine->posted_audio_time, memory_order_relaxed);
     }
 
-    usleep((self->delta_t_ms * 1000) - ellapsed_s * 1000000);
+    double _sleep_t = self->delta_t- ellapsed_s;
+    usleep( (int)(_sleep_t * 1e6) );
     
     return 0;
 } 
