@@ -73,8 +73,8 @@ void log_log(LogLevel level, const char *fmt, ...) {
     strftime(tmp, sizeof(tmp), "%Y-%m-%d %H:%M:%S", &tm_info);
 
     int ms = ts.tv_nsec / 1000000;           // nanoseconds → milliseconds
-    char time_buf[64];
-    snprintf(time_buf, 64, "%s.%03d", tmp, ms);
+    char time_buf[128];
+    snprintf(time_buf, 128, "%s.%03d", tmp, ms);
 
     // Format log message
     char log_line[1024];

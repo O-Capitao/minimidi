@@ -32,14 +32,9 @@ typedef struct MM_TUI
 
     unsigned int bpm,
         fps,
-        delta_ticks,         // when playing, how many ticks does the cursor
-                             // move in one UI frame?
-                             //     1 UI frame = (1/fps) s
-                             //     1 s = ? ticks
         cursor_position_ticks;
 
-    double playback_time,
-        delta_t;
+    double delta_t, playback_time, last_playback_time;
 
     // opened midi file
     MM_File *file;

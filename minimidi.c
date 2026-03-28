@@ -814,5 +814,5 @@ double MM_Util_tick_to_s(unsigned int ticks, unsigned short bpm, unsigned int pp
 }
 
 unsigned int MM_Util_s_to_tick(double t_s, unsigned short bpm, unsigned int ppqn) {
-    return (unsigned int)floor( (t_s * (double)bpm ) / ( 60 * (double)ppqn) );
+    return (unsigned int)floor(t_s * (double)bpm * (double)ppqn / 60.0);
 }

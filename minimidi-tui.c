@@ -78,12 +78,15 @@ int _update_sizes( MM_TUI *self )
 
 
     if (self->is_playing){
-        self->cursor_position_ticks += self->delta_ticks;
-        // move the screen if needed
-        if ( self->cursor_position_ticks >= self->logical_start[0] + self->logical_size[0] / 2 ){
-            self->logical_start[0] += self->delta_ticks;
-        }
-    } else {
+
+        int _ticks_offset =
+            ( self->cursor_position_ticks >= self->logical_size[0] / 2 )
+            ? self->logical_size[0] / 2
+            : self->cursor_position_ticks;
+
+        self->logical_start[0] = self->cursor_position_ticks - _ticks_offset;
+
+        } else {
         self->is_render_requested = true;
     }
     
@@ -557,13 +560,11 @@ int MM_TUI_init( MM_TUI *self, MM_File *file, MM_Ring_Buffer *cmd_queue, MM_Audi
 
     // INIT PLAYBACK STUFF
     self->playback_time = 0;
+    self->last_playback_time = 0;
     
     self->bpm = bpm;
 
     self->delta_t = 1.0 /  (double)self->fps;
-
-    // TODO: check this
-    self->delta_ticks = (1000 * self->bpm * self->file->header->ppqn) / ( 60000 * self->fps );
 
     self->cursor_position_ticks = 0;
     self->cmd_queue = cmd_queue;
@@ -629,7 +630,16 @@ int MM_TUI_step( MM_TUI *self ){
     log_trace("Worked for %g s", ellapsed_s);
 
     if (self->is_playing){
+        self->last_playback_time = self->playback_time;
         self->playback_time = atomic_load_explicit(&self->audio_engine->posted_audio_time, memory_order_relaxed);
+        
+        // handle loop around
+        if (self->playback_time < self->last_playback_time){
+            self->last_playback_time = 0;
+        }
+
+        // playback cursor positioned according
+        self->cursor_position_ticks = MM_Util_s_to_tick( self->playback_time, self->bpm, self->file->header->ppqn);
     }
 
     double _sleep_t = self->delta_t- ellapsed_s;
@@ -640,8 +650,6 @@ int MM_TUI_step( MM_TUI *self ){
 
 int MM_TUI_destroy( MM_TUI *self)
 {
-    // MM_Synth_destroy(self->synth);
-
     delwin( self->grid_derwin );
     endwin();
     free(self);

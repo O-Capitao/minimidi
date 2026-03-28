@@ -11,6 +11,12 @@
 float _calc_tempered_freq( int note_i ){
     return 440.0 * pow( 2, ((float)note_i - 57.0) / 12.0 );
 }
+int _restart_file( MM_AudioEngine *e ){
+    e->audio_time = 0;
+    e->nxt_node = e->midi_file->events->first;
+
+    return 0;
+}
 
 static int paStreamCallback( const void *inputBuffer,
                             void *outputBuffer,
@@ -44,28 +50,41 @@ static int paStreamCallback( const void *inputBuffer,
         // is the synth on note_on mode?
         // double _cycle_t = e->audio_time;
         for (size_t i = 0; i < BUFFER_SIZE; i++){
-            
-            // check if Synth state needs to change
-            MM_Event *nxt_evt = e->nxt_node->value;
-            double _nxt_evt_t = MM_Util_tick_to_s( nxt_evt->abs_ticks, e->bpm, e->midi_file->header->ppqn);
-            
-            if (_nxt_evt_t <= e->audio_time) {
-                // event has occured
-                if (nxt_evt->status_code == MIDI_NOTE_OFF) {
-                    log_debug("paStreamCallback: MIDI_NOTE_OFF at %f s .", _nxt_evt_t );
-                    e->synth.note_on = false;
-                } else if (nxt_evt->status_code == MIDI_NOTE_ON){
-                    log_debug("paStreamCallback: MIDI_NOTE_ON at %f s .", _nxt_evt_t );
-                    e->synth.note_on = true;
-                    e->synth.active_note = &(nxt_evt->note);
+            if (e->audio_time >= MM_Util_tick_to_s(e->midi_file->track->total_ticks, e->bpm, e->midi_file->header->ppqn)){
+                e->synth.note_on = false;
+                out[i] = 0.0;
+            } else {
+                // check if Synth state needs to change
+                MM_Event *nxt_evt = e->nxt_node->value;
+                double _nxt_evt_t = MM_Util_tick_to_s( nxt_evt->abs_ticks, e->bpm, e->midi_file->header->ppqn);
+                
+                if (_nxt_evt_t <= e->audio_time) {
+                    // event has occured
+                    if (nxt_evt->status_code == MIDI_NOTE_OFF) {
+                        // log_debug("paStreamCallback: MIDI_NOTE_OFF at %f s .", _nxt_evt_t );
+                        e->synth.note_on = false;
+                    } else if (nxt_evt->status_code == MIDI_NOTE_ON){
+                        // log_debug("paStreamCallback: MIDI_NOTE_ON at %f s .", _nxt_evt_t );
+                        e->synth.note_on = true;
+                        e->synth.active_note = &(nxt_evt->note);
+                    }
+
+                    e->nxt_node = e->nxt_node->next;
                 }
 
-                e->nxt_node = e->nxt_node->next;
+                out[i] = MM_Synth_next_sample( &(e->synth), e->audio_time);
+
+
             }
 
-            out[i] = MM_Synth_next_sample( &(e->synth), e->audio_time);
             
             e->audio_time += e->delta_t;
+            double last_sec = (double)(e->midi_file->track->total_beats) * 60 / (double)(e->bpm);
+            // check time range - always loop
+            if (e->audio_time >= last_sec) {
+                _restart_file(e);
+            }
+            
 
         }
         // post for other threads to see (UI )
@@ -81,6 +100,7 @@ static int paStreamCallback( const void *inputBuffer,
 
     return 0;
 }
+
 
 int MM_AudioEngine_init(MM_AudioEngine *s, MM_Ring_Buffer *cmd_queue, MM_File *file, unsigned int bpm ){
     log_debug("MM_AudioEngine_init: entering");
