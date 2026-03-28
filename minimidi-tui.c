@@ -1,4 +1,6 @@
 #include <ncurses.h>
+#include <time.h>
+#include <unistd.h>
 
 #include "minimidi-tui.h"
 
@@ -42,6 +44,17 @@ int __calc_1st_bar_offset_logical( int x0, int beat_per_bar ) {
     return rem == 4 ? 0 : rem;
 }
 
+// we end the "playback" part of the file
+// by default in the end of the bar
+// 
+// returns: last playable tick
+int __calc_end_of_playback( int last_tick, int ppqn, int beat_in_bar ) {
+    int ticks_per_bar = ppqn * beat_in_bar;
+    int bars_in_playback = last_tick / ticks_per_bar;
+
+    return ticks_per_bar * ( bars_in_playback + 1 );
+}
+
 int _coords__note_2_grid_row( int start_note, int note, int row_per_note, int l_y_grid )
 {
     return l_y_grid - 2 /*box*/ - ( note - start_note ) * row_per_note;
@@ -52,7 +65,7 @@ int _coords__grid_row_2_note( int start_note, int row, int row_per_note, int l_y
     return start_note - ( row + 2 - l_y_grid ) / row_per_note;
 }
 
-int _update_sizes( MiniMidi_TUI *self )
+int _update_sizes( MM_TUI *self )
 {
     getmaxyx(stdscr, self->outer_size[1], self->outer_size[0]);
     getmaxyx(self->grid_derwin, self->grid_size[1], self->grid_size[0]);
@@ -60,8 +73,23 @@ int _update_sizes( MiniMidi_TUI *self )
     self->logical_size[0] = self->grid_size[0] * self->ticks_per_col;
     self->logical_size[1] = ( self->grid_size[1] - 2 ) / LINES_PER_SEMITONE;
 
-    // calc movement increment
-    self->move_increment = self->logical_size[0] / 4;
+    // move increment is always one bar, figure oput later how to handle cleanly
+    self->move_increment = 2 * self->file->header->ppqn;
+
+
+    if (self->is_playing){
+
+        int _ticks_offset =
+            ( self->cursor_position_ticks >= self->logical_size[0] / 2 )
+            ? self->logical_size[0] / 2
+            : self->cursor_position_ticks;
+
+        self->logical_start[0] = self->cursor_position_ticks - _ticks_offset;
+
+        } else {
+        self->is_render_requested = true;
+    }
+    
 
     return 0;
 }
@@ -69,10 +97,10 @@ int _update_sizes( MiniMidi_TUI *self )
 * When app starts:
 * snap window to show events instead of (C0, 1st beat) corner
 */
-int _snap_to_first_events( MiniMidi_TUI *self )
+int _snap_to_first_events( MM_TUI *self )
 {
     // find 1st NOTE_ON evt
-    MiniMidi_Event *e;
+    MM_Event *e;
     
     int ind = 0;
 
@@ -100,7 +128,7 @@ int _snap_to_first_events( MiniMidi_TUI *self )
     return 0;
 }
 
-int _init_ncurses( MiniMidi_TUI *self )
+int _init_ncurses( MM_TUI *self )
 {
     // Start UI
 	initscr();			        /* Start curses mode 		*/
@@ -122,7 +150,7 @@ int _init_ncurses( MiniMidi_TUI *self )
     
     start_color();
     use_default_colors();  // Use terminal theme colors
-
+    nodelay(stdscr, 1);
         // Define color pairs (pair_number, foreground, background)
     init_pair( RED_ON_BLK,    COLOR_RED,   COLOR_WHITE );
     init_pair( GREEN_ON_BLK,  COLOR_GREEN, COLOR_BLACK );
@@ -132,11 +160,18 @@ int _init_ncurses( MiniMidi_TUI *self )
 
     getmaxyx(stdscr, self->outer_size[1], self->outer_size[0]);
 
-    self->grid_derwin = derwin( stdscr, 
+    self->grid_derwin = derwin( stdscr,
         self->outer_size[1] - TOP_BAR_HEIGHT - BOTT_BAR_HEIGHT,
         self->outer_size[0],
         TOP_BAR_HEIGHT,
         0 );
+
+    self->playback_derwin = derwin( stdscr,
+        4,
+        25,
+        5,
+        10
+    );
 
     getmaxyx( self->grid_derwin, self->grid_size[1], self->grid_size[0]);
     assert(self->outer_size[0] == self->grid_size[0]);
@@ -144,10 +179,13 @@ int _init_ncurses( MiniMidi_TUI *self )
     _update_sizes( self );
     _snap_to_first_events( self );
 
+    // init playback panel
+    self->is_playing = false;
+
     return 0;
 }
 
-int _handle_input( MiniMidi_TUI *self )
+int _handle_input( MM_TUI *self )
 {
     int key = getch();
 
@@ -179,10 +217,28 @@ int _handle_input( MiniMidi_TUI *self )
             } else {
                 self->logical_start[0] = 0;
             }
+
+            if (!self->is_playing){
+                self->cursor_position_ticks = self->logical_start[0];
+            }
+
             break;
         case KEY_RIGHT:
             self->logical_start[0] += self->move_increment;
+
+            log_debug("minimidi-tui.c > _handle_input() : moving by %i, new start at %i", self->move_increment, self->logical_start[0]);
+    
             break;
+        // PLAY THAT FUNKY MUSIC WHITE BOY
+        case ' ':
+            log_debug("minimidi-tui.c > _handle_input() : pressed SPACE");
+            self->is_playing = !self->is_playing;
+            MM_AudioCommand cmd;
+            cmd.cmd_type = self->is_playing ?
+                MM_CMD_PLAY : MM_CMD_PAUSE;
+            MM_Ring_Buffer__push( self->cmd_queue, &cmd );
+
+             break;
         case 'q':
         case 'Q':
             self->is_running = false;
@@ -204,7 +260,7 @@ int _handle_input( MiniMidi_TUI *self )
     return 0;
 }
 
-int _render_note_labels( MiniMidi_TUI *self )
+int _render_note_labels( MM_TUI *self )
 {
     int line_index,
         oct,
@@ -234,7 +290,7 @@ int _render_note_labels( MiniMidi_TUI *self )
     return 0;
 }
 
-int _render_info( MiniMidi_TUI *self)
+int _render_info( MM_TUI *self)
 {
     if (mvprintw( 0, 0, "file: %s . size: %li bytes . %li events in %li ticks / %li beats.", 
             self->file->filepath, 
@@ -254,7 +310,7 @@ int _render_info( MiniMidi_TUI *self)
     return 0;
 }
 
-int _draw_bar_label( MiniMidi_TUI *self, int bar_n, int line_index, int col_index ){
+int _draw_bar_label( MM_TUI *self, int bar_n, int line_index, int col_index ){
     static char bar_number_srt[10];
     
     wattron( self->grid_derwin, COLOR_PAIR(2));
@@ -266,11 +322,8 @@ int _draw_bar_label( MiniMidi_TUI *self, int bar_n, int line_index, int col_inde
 }
 
 
-int _render_grid( MiniMidi_TUI *self ){
-
-    sprintf( MiniMidi_Log_log_line, "minimidi-tui.c > _render_grid() : Entering" );
-    MiniMidi_Log_writeline();
-    
+int _render_grid( MM_TUI *self ){
+   
     int err;
     int line_index, aux_line_index, beat_counter, bar_counter, col_in_grid;
     int ppqn = self->file->header->ppqn;
@@ -281,8 +334,7 @@ int _render_grid( MiniMidi_TUI *self ){
     int bar_offset = (self->logical_start[0] / ppqn) / self->beats_in_bar + 1;
     int x_ticks = 0;
 
-    sprintf( MiniMidi_Log_log_line, "minimidi-tui.c > _render_grid() : bar_offset = %i", bar_offset );
-    MiniMidi_Log_writeline();
+
 
     for (int i_note = self->logical_start[1]; i_note < self->logical_start[1] + self->logical_size[1]; i_note ++ ){
 
@@ -290,15 +342,14 @@ int _render_grid( MiniMidi_TUI *self ){
         
         assert(line_index > 0 && line_index < self->grid_size[1]);
         
-        aux_line_index = line_index - 1;        // where bar delimiters are drawed into
-        beat_counter = self->logical_start[0] / ppqn;  // keep track of actual beats, not just cols
+        aux_line_index = line_index - 1;                // where bar delimiters are drawed into
+        beat_counter = self->logical_start[0] / ppqn;  //  keep track of actual beats, not just cols
         bar_counter = 0;
         
         // cycle through drawable cols
         for (int j = GRID_LEFT_LABELS_WIDTH; j < self->grid_size[0] - 1 /* box */; j ++ ){
             
-            // sprintf( MiniMidi_Log_log_line, "minimidi-tui.c > _render_grid() : iterating in columns, j=%i", j );
-            // MiniMidi_Log_writeline();
+
             
             // dash under even beats
             if ( beat_counter % 2 == 0 ){
@@ -319,8 +370,7 @@ int _render_grid( MiniMidi_TUI *self ){
 
                 beat_counter++;
 
-                // sprintf( MiniMidi_Log_log_line, "minimidi-tui.c > _render_grid() : new beat %i at j=%i", beat_counter, j );
-                // MiniMidi_Log_writeline();
+
 
                 if ( beat_counter % self->beats_in_bar == 0) {
  
@@ -332,8 +382,7 @@ int _render_grid( MiniMidi_TUI *self ){
                     // annotate the bar num for the 1st line only
                     if (i_note == (self->logical_start[1] + self->logical_size[1] - 1) && j < self->grid_size[0] - 10 ){
 
-                        sprintf( MiniMidi_Log_log_line, "minimidi-tui.c > _render_grid() : draw bar for BAR %i, line=%i, col=%i", bar_counter+bar_offset, i_note, j );
-                        MiniMidi_Log_writeline();
+
                         
                         _draw_bar_label( self, bar_offset + bar_counter, aux_line_index, j + 2 );
                     }
@@ -342,8 +391,8 @@ int _render_grid( MiniMidi_TUI *self ){
         }
     }
 
-    // // finish by drawing the label for BAR 1 if it's visible
-    if (self->logical_start[0] == 0){
+    // finish by drawing the label for BAR 1 if it's visible
+    if (self->logical_start[0] % (4 * self->file->header->ppqn) == 0 ){
         _draw_bar_label( 
             self, 
             1, 
@@ -355,26 +404,22 @@ int _render_grid( MiniMidi_TUI *self ){
 }
 
 
-int _render_midi( MiniMidi_TUI *self )
+int _render_midi( MM_TUI *self )
 {
-    sprintf( MiniMidi_Log_log_line, "minimidi-tui.c > _render_midi() : Entering" );
-    MiniMidi_Log_writeline();
+    MM_Event_LList_Node *cursor;
+    MM_Event *aux;
 
-    MiniMidi_Event_List_Node *cursor;
-    MiniMidi_Event *aux;
-
-    MiniMidi_get_events_in_range(
+    MM_File_get_events_in_range(
         self->file,
-        self->midi_events_list,
+        self->midi_events_screen_list,
         self->logical_start[0],
         self->logical_start[0] + self->logical_size[0],
         self->logical_start[1],
         self->logical_start[1] + self->logical_size[1]
     );
 
-    cursor = self->midi_events_list->first;
+    cursor = self->midi_events_screen_list->first;
     int cursor_tick, cursor_note, tgt_col, note_line, cursor_tick_aux, tgt_col_aux;
-
 
     while (cursor)
     {
@@ -385,7 +430,8 @@ int _render_midi( MiniMidi_TUI *self )
 
 
         tgt_col = GRID_LEFT_LABELS_WIDTH + ( (cursor_tick - self->logical_start[0]) / self->ticks_per_col );
-        
+
+
 
         // draw this fucker
         if ( cursor->value->status_code == MIDI_NOTE_ON )
@@ -437,14 +483,56 @@ int _render_midi( MiniMidi_TUI *self )
     return 0;
 }
 
+int _render_playback( MM_TUI *self ){
+
+    static char aux_str[50];
+    int _lines, _cols;
+
+    if (self->is_playing){
+        
+        //get size of playback derwin
+        getmaxyx( self->playback_derwin, _lines, _cols);
+        
+        // make a run of clear
+        for (int i = 0; i < _cols; i++){
+            for (int j = 0; j < _lines; j++){
+                mvwaddch( self->playback_derwin, j,  i, ' ' );
+            }
+        }
+
+        // draw stuff now :)
+        box(self->playback_derwin, '|', '=');
+        snprintf( aux_str, 50, "t=%f s", self->playback_time );
+
+        mvwprintw(self->playback_derwin, 1, 3, "-PLAYING-");
+        mvwprintw(self->playback_derwin, 2, 3, aux_str);
+
+        // get cursor position and paint it in the main window
+        // knowing that time = something
+
+        // get position
+        int tgt_col = GRID_LEFT_LABELS_WIDTH + ( (self->cursor_position_ticks - self->logical_start[0]) / self->ticks_per_col );
+
+        wattron( stdscr, COLOR_PAIR(2));
+        mvwaddch( stdscr, self->outer_size[1] - 5, tgt_col, '^' );
+        mvwaddch( stdscr, self->outer_size[1] - 4, tgt_col, '|' );
+        mvwaddch( stdscr, self->outer_size[1] - 3, tgt_col, '|' );
+        wattroff( stdscr, COLOR_PAIR(2));
+    }
+
+    return 0;
+}
+
 /**
  * PUBLIC
  */
-int MiniMidi_TUI_init( MiniMidi_TUI *self, MiniMidi_File *file )
+int MM_TUI_init( MM_TUI *self, MM_File *file, MM_Ring_Buffer *cmd_queue, MM_AudioEngine *audio_engine, unsigned int bpm )
 {
     self->is_dirty = false;
     self->is_running = true;
-    //
+    self->is_render_requested = true;
+    
+    // logica size of the grid!
     self->logical_size[0] = 0;
     self->logical_size[1] = 0;
     //
@@ -466,45 +554,106 @@ int MiniMidi_TUI_init( MiniMidi_TUI *self, MiniMidi_File *file )
 
     //
     self->file = file;
-    self->midi_events_list = MiniMidi_Event_LList_init();
-  
+    self->midi_events_screen_list = MM_Event_LList_init();
+    self->midi_events_audio_list = MM_Event_LList_init();
+    self->fps = 15;
+
+    // INIT PLAYBACK STUFF
+    self->playback_time = 0;
+    self->last_playback_time = 0;
+    
+    self->bpm = bpm;
+
+    self->delta_t = 1.0 /  (double)self->fps;
+
+    self->cursor_position_ticks = 0;
+    self->cmd_queue = cmd_queue;
+    self->audio_engine = audio_engine;
+
     if ( _init_ncurses(self) ) return 1;
 
+    log_debug("TUI Init: done");
+
     return 0;
 }
 
+int MM_TUI_render(MM_TUI *s ){
 
-int MiniMidi_TUI_update( MiniMidi_TUI *self )
-{
-    // just handle_input here?
-    _handle_input(self);
+    if (s->is_playing || s->is_render_requested){
+        clear();
+        if (_render_info( s )) {
+            return 1;
+        }
+        if (_render_note_labels( s )) {
+            return 1;
+        }
+        if (_render_grid( s )) {
+            return 1;
+        }
+        if (_render_midi( s )) {
+            return 1;
+        }
+    
+        if (s->is_playing){
+            // show a lil panel with a clock running
+            if (_render_playback( s )) {
+                return 1;
+            }
+
+            box( s->grid_derwin, '|', '=' );
+
+            wrefresh( stdscr );
+            wrefresh( s->grid_derwin );
+        }
+    }
+
     return 0;
 }
 
+int MM_TUI_step( MM_TUI *self ){
 
-int MiniMidi_TUI_render( MiniMidi_TUI *self )
-{
-    clear();
+    clock_t step_start, step_end;
+    double ellapsed_s;
+
+    step_start = clock();
+    log_debug("Entering MM_TUI_step.");
+
+    // get input
+    _handle_input( self );
     _update_sizes( self );
+    MM_TUI_render( self );
 
-    if (_render_info( self )) return 1;
-    if (_render_note_labels( self )) return 1;
-    if (_render_grid( self )) return 1;
-    if (_render_midi( self )) return 1;
+    step_end = clock();
+    ellapsed_s = (double)(step_end - step_start) / (double)CLOCKS_PER_SEC;
 
-    box( self->grid_derwin, '|', '=' );
+    // assert(self->delta_t_ms > (1000 * ellapsed_s));
+    log_trace("Worked for %g s", ellapsed_s);
 
-    wrefresh( stdscr );
-    wrefresh( self->grid_derwin );
+    if (self->is_playing){
+        self->last_playback_time = self->playback_time;
+        self->playback_time = atomic_load_explicit(&self->audio_engine->posted_audio_time, memory_order_relaxed);
+        
+        // handle loop around
+        if (self->playback_time < self->last_playback_time){
+            self->last_playback_time = 0;
+        }
+
+        // playback cursor positioned according
+        self->cursor_position_ticks = MM_Util_s_to_tick( self->playback_time, self->bpm, self->file->header->ppqn);
+    }
+
+    double _sleep_t = self->delta_t- ellapsed_s;
+    usleep( (int)(_sleep_t * 1e6) );
     
     return 0;
-}
+} 
 
-int MiniMidi_TUI_destroy( MiniMidi_TUI *self)
+int MM_TUI_destroy( MM_TUI *self)
 {
     delwin( self->grid_derwin );
     endwin();
     free(self);
+
 
     return 0;
 }

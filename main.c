@@ -1,20 +1,24 @@
 #include <stdio.h>
 #include <string.h>
 
+
 #include "globals.h"
 #include "minimidi.h"
 #include "minimidi-tui.h"
+#include "minimidi-audio.h"
 #include "minimidi-log.h"
+#include "minimidi-transport.h"
 
 #define ARG_MAX_LEN 100
 
-void quit( MiniMidi_TUI *ui, MiniMidi_File *f, int is_error )
+void quit( MM_TUI *ui, MM_File *f, int is_error )
 {   
-    MiniMidi_TUI_destroy(ui);
-    MiniMidi_File_free( f );
+    MM_TUI_destroy(ui);
+    MM_File_free( f );
     if (is_error)
     {
-        printf(RED "ERROR" RESET "Houston we have a problem...");
+        log_error("An error occurred, quitting.");
+        printf(RED "ERROR" RESET " Houston we have a problem...\n");
     }
 }
 
@@ -25,13 +29,14 @@ int main( int argc, char *argv[] )
 {
     // Catch Args
     if (argc < 2){
+        log_fatal("Please supply args.");
         printf(RED "ERROR" RESET " please supply args.\n");
         return 1;
     }
 
     size_t sizeofarg = strlen(argv[1]);
     if (sizeofarg > ARG_MAX_LEN){
-        
+        log_fatal("Too many args.");
         printf(RED "ERROR" RESET " Too many args.\n");
         return 1;
     }
@@ -40,10 +45,14 @@ int main( int argc, char *argv[] )
     char *tmux = getenv("TMUX");
     
     // init logger
-    MiniMidi_Log_init();
-    sprintf( MiniMidi_Log_log_line, "main: initting." );
-    MiniMidi_Log_writeline();
+    if (log_init("minimidi.log") != 0) {
+        // If logger fails, we can't log the error, so print to stderr and exit.
+        fprintf(stderr, "Failed to initialize logger. Exiting.\n");
+        return 1;
+    }
+    log_info("main: initting.");
 
+    // check if we're running in tmux
     if (tmux)
     {
         printf("Running inside tmux. Launching a new tmux session...\n");
@@ -63,31 +72,45 @@ int main( int argc, char *argv[] )
     }
 
 
-
     // Read the file passed in by arg
-    MiniMidi_File *midi_file = MiniMidi_File_init( argv[1] );
-
-
-    
+    MM_File *midi_file = MM_File_init( argv[1] );
     if (midi_file == NULL) {
+        log_error("Failed to read MIDI file: %s", argv[1]);
         printf(RED "ERROR" RESET " Failed to read MIDI file: %s\n", argv[1]);
         return 1;
     }
 
-    MiniMidi_TUI *ui = (MiniMidi_TUI*)malloc( sizeof( MiniMidi_TUI ) );
-    MiniMidi_TUI_init(ui, midi_file );
+    // transport
+    MM_Ring_Buffer *cmd_queue = MM_Ring_Buffer__init(128, sizeof(MM_AudioCommand));
+
+
+    // todo: 
+    // dynamic bpm, for now, defined here
+    unsigned int bpm = 120;
+
+    MM_AudioEngine eng;
+    MM_AudioEngine_init(&eng, cmd_queue, midi_file, bpm );
+    MM_TUI *ui = (MM_TUI*)malloc( sizeof( MM_TUI ) );
+    MM_TUI_init(ui, midi_file, cmd_queue, &eng, bpm );
 
     int ERRSTATUS = 0;
 
-    while (ui->is_running)
+
+
+    /**
+     * MAIN LOOP
+     */
+    while (ui->is_running && ERRSTATUS == 0)
     {
-        MiniMidi_TUI_render( ui );
-        ERRSTATUS = MiniMidi_TUI_update( ui );
+        ERRSTATUS = MM_TUI_step( ui );
+
+        if (ERRSTATUS){
+            printf("Like whatever");
+        }
     }
 
     quit(ui, midi_file, ERRSTATUS ? true: false);
-    
-    MiniMidi_Log_free();
+    log_deinit();
 
     return 0;
 }
