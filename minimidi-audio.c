@@ -74,7 +74,6 @@ static int paStreamCallback( const void *inputBuffer,
 
                 out[i] = MM_Synth_next_sample( &(e->synth), e->audio_time);
 
-
             }
 
             

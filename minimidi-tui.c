@@ -1,7 +1,8 @@
 #include <ncurses.h>
 #include <time.h>
 #include <unistd.h>
-
+#include <ctype.h>
+#include <string.h>
 #include "minimidi-tui.h"
 
 /**
@@ -185,6 +186,274 @@ int _init_ncurses( MM_TUI *self )
     return 0;
 }
 
+// ─── helpers ────────────────────────────────────────────────────────────────
+
+static WINDOW *_modal_open(int height, int width)
+{
+    int rows, cols;
+    getmaxyx(stdscr, rows, cols);
+    WINDOW *w = newwin(height, width, (rows - height) / 2, (cols - width) / 2);
+    keypad(w, TRUE);
+    box(w, 0, 0);
+    return w;
+}
+
+static void _modal_close(WINDOW *w)
+{
+    delwin(w);
+    touchwin(stdscr);
+    keypad(stdscr, TRUE);
+    curs_set(0);
+    wrefresh(stdscr);
+}
+
+// ─── open_modal_set_text ────────────────────────────────────────────────────
+
+bool open_modal_set_text(const char *label, int maxlen, char *var)
+{
+    int width  = maxlen + 6; // "> " + padding + borders
+    if (width < (int)strlen(label) + 4) width = strlen(label) + 4;
+    WINDOW *w = _modal_open(5, width);
+
+    mvwprintw(w, 1, 2, "%s", label);
+    mvwprintw(w, 2, 2, "> ");
+    wmove(w, 2, 4);
+    wrefresh(w);
+
+    char buf[256] = {0};
+    int  pos = 0;
+    bool confirmed = false;
+
+    curs_set(1);
+    noecho();
+
+    while (1)
+    {
+        int ch = wgetch(w);
+
+        if (ch == 27)
+            break;
+        else if (ch == '\n' || ch == KEY_ENTER)
+        {
+            confirmed = true;
+            break;
+        }
+        else if ((ch == KEY_BACKSPACE || ch == 127) && pos > 0)
+        {
+            buf[--pos] = '\0';
+            int y, x;
+            getyx(w, y, x);
+            if (x > 4) { mvwaddch(w, y, x - 1, ' '); wmove(w, y, x - 1); }
+        }
+        else if (isprint(ch) && pos < maxlen - 1)
+        {
+            buf[pos++] = (char)ch;
+            waddch(w, ch);
+        }
+
+        wrefresh(w);
+    }
+
+    if (confirmed) strncpy(var, buf, maxlen);
+    _modal_close(w);
+    return confirmed;
+}
+
+// ─── open_modal_set_number ──────────────────────────────────────────────────
+
+bool open_modal_set_number(const char *label, int min, int max, int *var)
+{
+    int width = 24;
+    if (width < (int)strlen(label) + 4) width = strlen(label) + 4;
+    WINDOW *w = _modal_open(6, width);
+
+    mvwprintw(w, 1, 2, "%s", label);
+    mvwprintw(w, 2, 2, "range: [%d, %d]", min, max);
+    mvwprintw(w, 3, 2, "> ");
+    wmove(w, 3, 4);
+    wrefresh(w);
+
+    char buf[16] = {0};
+    int  pos = 0;
+    bool confirmed = false;
+
+    curs_set(1);
+    noecho();
+
+    while (1)
+    {
+        int ch = wgetch(w);
+
+        if (ch == 27)
+            break;
+        else if (ch == '\n' || ch == KEY_ENTER)
+        {
+            int val = atoi(buf);
+            if (val >= min && val <= max)
+            {
+                *var = val;
+                confirmed = true;
+                break;
+            }
+            else
+            {
+                // flash an error and let the user correct it
+                mvwprintw(w, 4, 2, "out of range! ");
+                wrefresh(w);
+            }
+        }
+        else if ((ch == KEY_BACKSPACE || ch == 127) && pos > 0)
+        {
+            buf[--pos] = '\0';
+            int y, x;
+            getyx(w, y, x);
+            if (x > 4) { mvwaddch(w, y, x - 1, ' '); wmove(w, y, x - 1); }
+        }
+        else if (isdigit(ch) && pos < (int)sizeof(buf) - 1)
+        {
+            buf[pos++] = (char)ch;
+            waddch(w, ch);
+        }
+
+        wrefresh(w);
+    }
+
+    _modal_close(w);
+    return confirmed;
+}
+
+// ─── open_modal_set_option ──────────────────────────────────────────────────
+
+bool open_modal_set_option(const char *label, const char **options, int n_options, int *var)
+{
+    // height: top border + label + blank + one row per option + bottom border
+    int height = n_options + 4;
+
+    int width = strlen(label) + 4;
+    for (int i = 0; i < n_options; i++)
+    {
+        int w = strlen(options[i]) + 6; // "  > " prefix + border
+        if (w > width) width = w;
+    }
+
+    WINDOW *w = _modal_open(height, width);
+    curs_set(0);
+    noecho();
+
+    int selected = *var; // start cursor on current value
+    if (selected < 0 || selected >= n_options) selected = 0;
+
+    bool confirmed = false;
+
+    while (1)
+    {
+        mvwprintw(w, 1, 2, "%s", label);
+
+        for (int i = 0; i < n_options; i++)
+        {
+            if (i == selected)
+                mvwprintw(w, i + 3, 2, "> %s", options[i]);
+            else
+                mvwprintw(w, i + 3, 2, "  %s", options[i]);
+        }
+
+        wrefresh(w);
+
+        int ch = wgetch(w);
+
+        if (ch == 27)
+            break;
+        else if (ch == '\n' || ch == KEY_ENTER)
+        {
+            *var = selected;
+            confirmed = true;
+            break;
+        }
+        else if (ch == KEY_UP   && selected > 0)           selected--;
+        else if (ch == KEY_DOWN && selected < n_options - 1) selected++;
+    }
+
+    _modal_close(w);
+    return confirmed;
+}
+
+int _set_tempo(MM_TUI *tui) {
+    // 1. Create & draw the modal
+    WINDOW *modal = newwin(5, 20, 5, 10);
+    box(modal, 0, 0);
+    mvwprintw(modal, 1, 2, "Set tempo (BPM):");
+    wattron( modal, COLOR_PAIR(2));
+
+    
+    mvwprintw(modal, 2, 2, "> ");
+    wattroff( modal, COLOR_PAIR(2));
+    wrefresh(modal);
+    keypad(modal, TRUE);
+
+    // position cursor after the "> "
+    wmove(modal, 2, 4);
+
+    // 2. Collect input
+    char buf[16] = {0};
+    int  pos = 0;
+    bool cancelled = false;
+
+    curs_set(1); // show cursor
+    noecho();    // we'll echo manually
+
+    while (1)
+    {
+        int ch = wgetch(modal);
+
+        if (ch == 27) // Esc
+        {
+            cancelled = true;
+            break;
+        }
+        else if (ch == '\n' || ch == KEY_ENTER)
+        {
+            break;
+        }
+        else if ((ch == KEY_BACKSPACE || ch == 127) && pos > 0)
+        {
+            buf[--pos] = '\0';
+            int y, x;
+            getyx(modal, y, x);
+            if (x > 4) // don't eat the "> "
+            {
+                mvwaddch(modal, y, x - 1, ' ');
+                wmove(modal, y, x - 1);
+            }
+        }
+        else if (isdigit(ch) && pos < (int)sizeof(buf) - 1)
+        {
+            buf[pos++] = (char)ch;
+            waddch(modal, ch); // manual echo
+        }
+
+        wrefresh(modal);
+    }
+
+    curs_set(0);
+
+    // 3. Use the value
+    if (!cancelled)
+    {
+        int _bpm = atoi(buf);
+        if (_bpm > 0) {
+            tui->bpm = _bpm;
+            tui->audio_engine->bpm = _bpm;
+        }
+    }
+
+    // 4. Tear down and repaint
+    delwin(modal);
+    touchwin(stdscr);
+    keypad(stdscr, TRUE);
+    wrefresh(stdscr);
+    return 0;
+}
+
 int _handle_input( MM_TUI *self )
 {
     int key = getch();
@@ -253,7 +522,12 @@ int _handle_input( MM_TUI *self )
         case '-':
             self->ticks_per_col *= 2;
             break;
-
+        case ('t' & 0x1F): // Ctrl+T
+            log_debug("set tempo");
+            // _set_tempo(self);
+            open_modal_set_number("Set Tempo (bpm)", 1, 500, &(self->bpm));
+            self->audio_engine->bpm = self->bpm;
+            break;
         default:
             break;
     }
@@ -616,7 +890,7 @@ int MM_TUI_step( MM_TUI *self ){
     double ellapsed_s;
 
     step_start = clock();
-    log_debug("Entering MM_TUI_step.");
+    // log_debug("Entering MM_TUI_step.");
 
     // get input
     _handle_input( self );
