@@ -5,7 +5,7 @@
 #include <stdlib.h>
 
 #define PI 3.14159265358979323846
-#define BUFFER_SIZE 1024
+#define BUFFER_SIZE 256
 
 // note_i is the number of the note, starting from C0
 float _calc_tempered_freq( int note_i ){
@@ -31,15 +31,33 @@ static int paStreamCallback( const void *inputBuffer,
     // process Cmd Buff
     MM_AudioCommand _cmd;
     while (!MM_Ring_Buffer__is_empty(e->cmd_queue)){
+
         MM_Ring_Buffer__pop(e->cmd_queue, &_cmd);
         if (_cmd.cmd_type == MM_CMD_PLAY){
             e->playing = true;
+
         } else if(_cmd.cmd_type == MM_CMD_PAUSE){
             e->playing = false;
+
         } else if(_cmd.cmd_type == MM_CMD_STOP){
             e->playing = false;
-        } else if(_cmd.cmd_type == MM_CMD_BACK_TO_BEGINING){
-            e->audio_time = 0;
+
+        } else if(_cmd.cmd_type == MM_CMD_JUMP_TO_TICK){
+
+            int _tick = _cmd.cmd_data;
+            e->audio_time = MM_Util_tick_to_s(
+                _tick,e->bpm, e->midi_file->header->ppqn );
+            
+            // hardcoded fump to start
+            e->nxt_node = MM_Event_LList_find_next_node_at_ticks( e->midi_file->events, _tick);
+                //e->midi_file->events->first;
+
+        } else if( _cmd.cmd_type == MM_CMD_SET_BPM ){
+            e->bpm = _cmd.cmd_data;
+            // // e->nxt_node = MM_Event_LList_find_next_node_at_ticks( e->midi_file->events, );
+            // e->nxt_node = MM_Event_LList_find_next_node_at_ticks( 
+            //     e->midi_file->events, 
+            //     MM_Util_s_to_tick(e->audio_time, e->bpm, e->midi_file->header->ppqn));
         } else {
             // not good.
         }

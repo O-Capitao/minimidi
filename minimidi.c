@@ -809,6 +809,18 @@ int MM_Event_LList_from_array( MM_Event_LList *list, MM_Event *array, size_t n_e
     return 0;
 }
 
+MM_Event_LList_Node *MM_Event_LList_find_next_node_at_ticks(MM_Event_LList *list, unsigned int ticks) {
+
+    MM_Event_LList_Node *retval = list->first;
+
+    while (retval->next && retval->next->value->abs_ticks < ticks ){
+        retval = retval->next;
+    }
+    log_debug("MM_Event_LList_find_next_node_at_ticks( %i ) -> EVT", ticks);
+    return retval;
+}
+
+
 double MM_Util_tick_to_s(unsigned int ticks, unsigned short bpm, unsigned int ppqn) {
     return ( 60 * (double)ticks ) / ((double)ppqn * (double)bpm );
 }

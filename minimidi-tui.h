@@ -41,7 +41,6 @@ typedef struct MM_TUI
     
     // list with events that should be drawn to current grid
     MM_Event_LList *midi_events_screen_list;
-    MM_Event_LList *midi_events_audio_list;
 
     // derwin pointer -> Grid Area
     WINDOW *grid_derwin;

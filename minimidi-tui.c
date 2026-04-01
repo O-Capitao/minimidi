@@ -5,6 +5,10 @@
 #include <string.h>
 #include "minimidi-tui.h"
 
+
+#define MM_KEY_ALT_LEFT  (KEY_MAX + 1)
+#define MM_KEY_ALT_RIGHT (KEY_MAX + 2)
+
 /**
  * Constants
  */
@@ -133,7 +137,10 @@ int _init_ncurses( MM_TUI *self )
 {
     // Start UI
 	initscr();			        /* Start curses mode 		*/
-	
+
+    // Call this after initscr() / newwin(), before your main loop
+    define_key("\033[1;3D", MM_KEY_ALT_LEFT);   // Alt + Left
+    define_key("\033[1;3C", MM_KEY_ALT_RIGHT);  // Alt + Right
     // Check if terminal supports color
     if (!has_colors()) {
         endwin();
@@ -261,7 +268,7 @@ bool open_modal_set_text(const char *label, int maxlen, char *var)
 
 // ─── open_modal_set_number ──────────────────────────────────────────────────
 
-bool open_modal_set_number(const char *label, int min, int max, int *var)
+bool open_modal_set_number(const char *label, int min, int max, unsigned int *var)
 {
     int width = 24;
     if (width < (int)strlen(label) + 4) width = strlen(label) + 4;
@@ -277,8 +284,8 @@ bool open_modal_set_number(const char *label, int min, int max, int *var)
     int  pos = 0;
     bool confirmed = false;
 
-    curs_set(1);
-    noecho();
+    // curs_set(1);
+    // noecho();
 
     while (1)
     {
@@ -317,6 +324,10 @@ bool open_modal_set_number(const char *label, int min, int max, int *var)
 
         wrefresh(w);
     }
+
+    // whatever I do to the inputs here
+    // I gotta undo it...
+
 
     _modal_close(w);
     return confirmed;
@@ -377,83 +388,6 @@ bool open_modal_set_option(const char *label, const char **options, int n_option
     return confirmed;
 }
 
-int _set_tempo(MM_TUI *tui) {
-    // 1. Create & draw the modal
-    WINDOW *modal = newwin(5, 20, 5, 10);
-    box(modal, 0, 0);
-    mvwprintw(modal, 1, 2, "Set tempo (BPM):");
-    wattron( modal, COLOR_PAIR(2));
-
-    
-    mvwprintw(modal, 2, 2, "> ");
-    wattroff( modal, COLOR_PAIR(2));
-    wrefresh(modal);
-    keypad(modal, TRUE);
-
-    // position cursor after the "> "
-    wmove(modal, 2, 4);
-
-    // 2. Collect input
-    char buf[16] = {0};
-    int  pos = 0;
-    bool cancelled = false;
-
-    curs_set(1); // show cursor
-    noecho();    // we'll echo manually
-
-    while (1)
-    {
-        int ch = wgetch(modal);
-
-        if (ch == 27) // Esc
-        {
-            cancelled = true;
-            break;
-        }
-        else if (ch == '\n' || ch == KEY_ENTER)
-        {
-            break;
-        }
-        else if ((ch == KEY_BACKSPACE || ch == 127) && pos > 0)
-        {
-            buf[--pos] = '\0';
-            int y, x;
-            getyx(modal, y, x);
-            if (x > 4) // don't eat the "> "
-            {
-                mvwaddch(modal, y, x - 1, ' ');
-                wmove(modal, y, x - 1);
-            }
-        }
-        else if (isdigit(ch) && pos < (int)sizeof(buf) - 1)
-        {
-            buf[pos++] = (char)ch;
-            waddch(modal, ch); // manual echo
-        }
-
-        wrefresh(modal);
-    }
-
-    curs_set(0);
-
-    // 3. Use the value
-    if (!cancelled)
-    {
-        int _bpm = atoi(buf);
-        if (_bpm > 0) {
-            tui->bpm = _bpm;
-            tui->audio_engine->bpm = _bpm;
-        }
-    }
-
-    // 4. Tear down and repaint
-    delwin(modal);
-    touchwin(stdscr);
-    keypad(stdscr, TRUE);
-    wrefresh(stdscr);
-    return 0;
-}
-
 int _handle_input( MM_TUI *self )
 {
     int key = getch();
@@ -465,19 +399,19 @@ int _handle_input( MM_TUI *self )
 
     switch (key)
     {
+        /***
+         * Cursor Movement
+         */
         case KEY_UP:
             // Handle up arrow key
             if (self->logical_start[1] < MAX_NOTE_VAL ){
                 self->logical_start[1]++;
             }
-
             break;
         case KEY_DOWN:
             if (self->logical_start[1] > 0){
                 self->logical_start[1]--;
             }
-            
-            // Handle down arrow key
             break;
         case KEY_LEFT:
             if (self->logical_start[0] > self->move_increment) // dont allow to go bellow zero
@@ -486,19 +420,14 @@ int _handle_input( MM_TUI *self )
             } else {
                 self->logical_start[0] = 0;
             }
-
-            if (!self->is_playing){
-                self->cursor_position_ticks = self->logical_start[0];
-            }
-
             break;
         case KEY_RIGHT:
             self->logical_start[0] += self->move_increment;
-
             log_debug("minimidi-tui.c > _handle_input() : moving by %i, new start at %i", self->move_increment, self->logical_start[0]);
-    
             break;
-        // PLAY THAT FUNKY MUSIC WHITE BOY
+        /**
+         * Basic Player Actions - Play / Pause
+         */
         case ' ':
             log_debug("minimidi-tui.c > _handle_input() : pressed SPACE");
             self->is_playing = !self->is_playing;
@@ -508,6 +437,9 @@ int _handle_input( MM_TUI *self )
             MM_Ring_Buffer__push( self->cmd_queue, &cmd );
 
              break;
+        /**
+         * App Actions - Quit, zoom in ui, etc
+         */
         case 'q':
         case 'Q':
             self->is_running = false;
@@ -522,11 +454,67 @@ int _handle_input( MM_TUI *self )
         case '-':
             self->ticks_per_col *= 2;
             break;
+        /**
+         * DAW ACTIONS
+         */
+        // Set Tempo
         case ('t' & 0x1F): // Ctrl+T
-            log_debug("set tempo");
-            // _set_tempo(self);
+            log_debug("minimidi-tui: _handle_input: set tempo.");
+            // pause audio thread
+            MM_AudioCommand pause_cmd;
+            pause_cmd.cmd_type = MM_CMD_PAUSE;
+            MM_Ring_Buffer__push( self->cmd_queue, &pause_cmd );
+
             open_modal_set_number("Set Tempo (bpm)", 1, 500, &(self->bpm));
-            self->audio_engine->bpm = self->bpm;
+            // self->audio_engine->bpm = self->bpm;
+            MM_AudioCommand scmd;
+            scmd.cmd_type = MM_CMD_SET_BPM;
+            scmd.cmd_data = self->bpm;
+            MM_Ring_Buffer__push( self->cmd_queue, &scmd );
+
+            // pause audio thread
+            MM_AudioCommand play_cmd;
+            play_cmd.cmd_type = MM_CMD_PLAY;
+            MM_Ring_Buffer__push( self->cmd_queue, &play_cmd );
+            break;
+
+        case KEY_HOME:
+            log_debug("minimidi-tui.c > _handle_input() : HOME key, jumped to start");
+            MM_AudioCommand jump_cmd;
+            jump_cmd.cmd_type = MM_CMD_JUMP_TO_TICK;
+            jump_cmd.cmd_data = 0;
+            MM_Ring_Buffer__push( self->cmd_queue, &jump_cmd );
+
+            break;
+
+        case KEY_END:
+            // // Jump to the last tick / rightmost position — replace MM_MAX_TICK
+            // // with whatever your track-length field is called.
+            // self->logical_start[0] = self->total_ticks;
+            // log_debug("minimidi-tui.c > _handle_input() : END key, jumped to end");
+            break;
+
+        // case ('i' & 0x1F): // Ctrl+I  (== 0x09, same byte as Tab)
+        //     // log_debug("minimidi-tui.c > _handle_input() : Ctrl+I");
+        //     // // TODO: your action here
+        //     break;
+
+        case MM_KEY_ALT_LEFT:
+            // // Larger jump left — adjust the multiplier to taste
+            // if (self->logical_start[0] > self->move_increment * 4)
+            // {
+            //     self->logical_start[0] -= self->move_increment * 4;
+            // } else {
+            //     self->logical_start[0] = 0;
+            // }
+            // log_debug("minimidi-tui.c > _handle_input() : Alt+Left, jumped to %i",
+            //           self->logical_start[0]);
+            break;
+
+        case MM_KEY_ALT_RIGHT:
+            // self->logical_start[0] += self->move_increment * 4;
+            // log_debug("minimidi-tui.c > _handle_input() : Alt+Right, jumped to %i",
+            //           self->logical_start[0]);
             break;
         default:
             break;
@@ -699,13 +687,8 @@ int _render_midi( MM_TUI *self )
     {
         cursor_tick = cursor->value->abs_ticks;
         cursor_note = ( cursor->value->note.octave * 12 ) + (int)( cursor->value->note.note );
-
         note_line = _coords__note_2_grid_row( self->logical_start[1], cursor_note, LINES_PER_SEMITONE, self->grid_size[1] );
-
-
         tgt_col = GRID_LEFT_LABELS_WIDTH + ( (cursor_tick - self->logical_start[0]) / self->ticks_per_col );
-
-
 
         // draw this fucker
         if ( cursor->value->status_code == MIDI_NOTE_ON )
@@ -757,42 +740,46 @@ int _render_midi( MM_TUI *self )
     return 0;
 }
 
+int _get_cursor_screen_col(MM_TUI *s){
+    return GRID_LEFT_LABELS_WIDTH + ( (s->cursor_position_ticks - s->logical_start[0]) / s->ticks_per_col );
+}
+
+int _render_cursor( MM_TUI *s){
+    
+    int tgt_col = _get_cursor_screen_col(s); 
+
+    // get cursor position and paint it in the main window
+    // knowing that time = something
+    wattron( stdscr, COLOR_PAIR(2));
+    mvwaddch( stdscr, s->outer_size[1] - 5, tgt_col, '^' );
+    mvwaddch( stdscr, s->outer_size[1] - 4, tgt_col, '|' );
+    mvwaddch( stdscr, s->outer_size[1] - 3, tgt_col, '|' );
+    wattroff( stdscr, COLOR_PAIR(2));
+
+    return 0;
+}
+
 int _render_playback( MM_TUI *self ){
 
     static char aux_str[50];
     int _lines, _cols;
 
-    if (self->is_playing){
-        
-        //get size of playback derwin
-        getmaxyx( self->playback_derwin, _lines, _cols);
-        
-        // make a run of clear
-        for (int i = 0; i < _cols; i++){
-            for (int j = 0; j < _lines; j++){
-                mvwaddch( self->playback_derwin, j,  i, ' ' );
-            }
+    //get size of playback derwin
+    getmaxyx( self->playback_derwin, _lines, _cols);
+
+    // make a run of clear
+    for (int i = 0; i < _cols; i++){
+        for (int j = 0; j < _lines; j++){
+            mvwaddch( self->playback_derwin, j,  i, ' ' );
         }
-
-        // draw stuff now :)
-        box(self->playback_derwin, '|', '=');
-        snprintf( aux_str, 50, "t=%f s", self->playback_time );
-
-        mvwprintw(self->playback_derwin, 1, 3, "-PLAYING-");
-        mvwprintw(self->playback_derwin, 2, 3, aux_str);
-
-        // get cursor position and paint it in the main window
-        // knowing that time = something
-
-        // get position
-        int tgt_col = GRID_LEFT_LABELS_WIDTH + ( (self->cursor_position_ticks - self->logical_start[0]) / self->ticks_per_col );
-
-        wattron( stdscr, COLOR_PAIR(2));
-        mvwaddch( stdscr, self->outer_size[1] - 5, tgt_col, '^' );
-        mvwaddch( stdscr, self->outer_size[1] - 4, tgt_col, '|' );
-        mvwaddch( stdscr, self->outer_size[1] - 3, tgt_col, '|' );
-        wattroff( stdscr, COLOR_PAIR(2));
     }
+
+    // draw stuff now :)
+    box(self->playback_derwin, '|', '=');
+    snprintf( aux_str, 50, "t=%f s", self->playback_time );
+
+    mvwprintw(self->playback_derwin, 1, 3, "-PLAYING-");
+    mvwprintw(self->playback_derwin, 2, 3, aux_str);
 
     return 0;
 }
@@ -829,8 +816,7 @@ int MM_TUI_init( MM_TUI *self, MM_File *file, MM_Ring_Buffer *cmd_queue, MM_Audi
     //
     self->file = file;
     self->midi_events_screen_list = MM_Event_LList_init();
-    self->midi_events_audio_list = MM_Event_LList_init();
-    self->fps = 15;
+    self->fps = 30;
 
     // INIT PLAYBACK STUFF
     self->playback_time = 0;
@@ -867,7 +853,9 @@ int MM_TUI_render(MM_TUI *s ){
         if (_render_midi( s )) {
             return 1;
         }
-    
+        if (_render_cursor(s)){
+            return 1;
+        }
         if (s->is_playing){
             // show a lil panel with a clock running
             if (_render_playback( s )) {
@@ -875,7 +863,6 @@ int MM_TUI_render(MM_TUI *s ){
             }
 
             box( s->grid_derwin, '|', '=' );
-
             wrefresh( stdscr );
             wrefresh( s->grid_derwin );
         }
@@ -890,7 +877,6 @@ int MM_TUI_step( MM_TUI *self ){
     double ellapsed_s;
 
     step_start = clock();
-    // log_debug("Entering MM_TUI_step.");
 
     // get input
     _handle_input( self );
@@ -917,8 +903,16 @@ int MM_TUI_step( MM_TUI *self ){
     }
 
     double _sleep_t = self->delta_t- ellapsed_s;
-    usleep( (int)(_sleep_t * 1e6) );
     
+    // Why would it be negative?
+    //   e.g. When setting the tempo, or any sync action
+    //   the loop ends up taking a loong time.
+    if (_sleep_t > 0){
+        usleep( (int)(_sleep_t * 1e6) );
+    } else {
+        log_warn("Long cycle detected, skipping wait.");
+    }
+
     return 0;
 } 
 
