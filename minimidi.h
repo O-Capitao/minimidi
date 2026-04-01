@@ -115,6 +115,7 @@ int             MM_Event_LList_destroy      ( MM_Event_LList *self );
 int             MM_Event_LList_from_array   ( MM_Event_LList *list, MM_Event *array, size_t n_events );
 void            MM_Event_LList__print_to_str( MM_Event_LList *list, char *output );
 
+MM_Event_LList_Node *MM_Event_LList_find_next_node_at_ticks(MM_Event_LList *list, unsigned int ticks);
 
 
 
