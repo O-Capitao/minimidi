@@ -7,10 +7,10 @@
             "request": "launch",
             "program": "minimidi",
             "args": [
-                "bassline1.MID"
+                "test_proj.yaml"
             ],
             "stopAtEntry": false,
-            "cwd": "~/thecodez/minimidi",
+            "cwd": "/home/capitaof/thecodez/minimidi",
             "environment": [],
             "externalConsole": false,
             "MIMode": "gdb",

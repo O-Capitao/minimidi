@@ -1,7 +1,9 @@
 #include "minimidi-audio.h"
 #include "minimidi-log.h"
+#include "minimidi.h"
 
 #include <math.h>
+#include <stddef.h>
 #include <stdlib.h>
 
 #define PI 3.14159265358979323846
@@ -11,11 +13,16 @@
 float _calc_tempered_freq( int note_i ){
     return 440.0 * pow( 2, ((float)note_i - 57.0) / 12.0 );
 }
-int _restart_file( MM_AudioEngine *e ){
-    e->audio_time = 0;
-    e->nxt_node = e->midi_file->events->first;
 
-    return 0;
+double _mixdown( double *track_samples, size_t n_tracks ){
+    double mixed_value;
+
+    for (size_t i = 0; i < n_tracks; i++){
+        mixed_value += track_samples[i];
+    }
+
+    // hard limiter
+    return mixed_value > 1 ? 1 : mixed_value;
 }
 
 static int paStreamCallback( const void *inputBuffer,
@@ -39,56 +46,48 @@ static int paStreamCallback( const void *inputBuffer,
         } else if(_cmd.cmd_type == MM_CMD_STOP){
             e->playing = false;
         } else if(_cmd.cmd_type == MM_CMD_BACK_TO_BEGINING){
-            e->audio_time = 0;
+            e->total_t = 0;
         } else {
             // not good.
         }
     }
+
+    MM_AudioTrack *curr_track;
+    double mix[ e->n_tracks ];
+
 
     if (e->playing){
         // process midi
         // is the synth on note_on mode?
         // double _cycle_t = e->audio_time;
         for (size_t i = 0; i < BUFFER_SIZE; i++){
-            if (e->audio_time >= MM_Util_tick_to_s(e->midi_file->track->total_ticks, e->bpm, e->midi_file->header->ppqn)){
-                e->synth.note_on = false;
-                out[i] = 0.0;
-            } else {
-                // check if Synth state needs to change
-                MM_Event *nxt_evt = e->nxt_node->value;
-                double _nxt_evt_t = MM_Util_tick_to_s( nxt_evt->abs_ticks, e->bpm, e->midi_file->header->ppqn);
-                
-                if (_nxt_evt_t <= e->audio_time) {
-                    // event has occured
-                    if (nxt_evt->status_code == MIDI_NOTE_OFF) {
-                        // log_debug("paStreamCallback: MIDI_NOTE_OFF at %f s .", _nxt_evt_t );
-                        e->synth.note_on = false;
-                    } else if (nxt_evt->status_code == MIDI_NOTE_ON){
-                        // log_debug("paStreamCallback: MIDI_NOTE_ON at %f s .", _nxt_evt_t );
-                        e->synth.note_on = true;
-                        e->synth.active_note = &(nxt_evt->note);
-                    }
 
-                    e->nxt_node = e->nxt_node->next;
+            for (size_t track_i = 0; track_i < e->n_tracks; track_i++ ){
+                
+                curr_track = &(e->tracks_arr[track_i]);
+                mix[track_i] = MM_AudioTrack_produce( curr_track, e->sequence_t );
+            
+            }
+
+            out[i] = _mixdown(mix, e->n_tracks );
+            
+            e->total_t += e->delta_t;
+            e->sequence_t += e->delta_t;
+
+            if (e->sequence_t >= e->next_sequence_break_t){
+
+                if ( e->active_sequence->loop_count != 0 && e->active_sequence_loop_counter >= e->active_sequence->loop_count ){
+                    // sequence is looping forever OR sequence still looping
+                    e->active_sequence = &(e->project->sequence_arr[++e->active_sequence_index]);
                 }
 
-                out[i] = MM_Synth_next_sample( &(e->synth), e->audio_time);
-
-
+                double leftover_sequence_time = e->sequence_t - e->next_sequence_break_t;
+                e->sequence_t = leftover_sequence_time;
+                
             }
-
-            
-            e->audio_time += e->delta_t;
-            double last_sec = (double)(e->midi_file->track->total_beats) * 60 / (double)(e->bpm);
-            // check time range - always loop
-            if (e->audio_time >= last_sec) {
-                _restart_file(e);
-            }
-            
-
         }
         // post for other threads to see (UI )
-        atomic_store_explicit(&e->posted_audio_time, e->audio_time, memory_order_relaxed);
+        atomic_store_explicit(&e->posted_audio_time, e->total_t, memory_order_relaxed);
 
     } else {
         // fill buff with zeros and carry on
@@ -102,20 +101,44 @@ static int paStreamCallback( const void *inputBuffer,
 }
 
 
-int MM_AudioEngine_init(MM_AudioEngine *s, MM_Ring_Buffer *cmd_queue, MM_File *file, unsigned int bpm ){
+int MM_AudioEngine_init( MM_AudioEngine *s, MM_Project *p, MM_Ring_Buffer *cmd_q ){
     log_debug("MM_AudioEngine_init: entering");
     
-    s->sample_rate = AUDIO_FRAMERATE;
-    s->audio_time = 0;
-    s->delta_t = 1.0 / AUDIO_FRAMERATE;
-    s->cmd_queue = cmd_queue;
-    s->midi_file = file;
-    s->nxt_node = file->events->first;
-    s->playing = false;
-    s->bpm = bpm;
+    s->project = p;
+    s->n_tracks = p->n_tracks;
+    s->tracks_arr = calloc(s->n_tracks, sizeof(MM_AudioTrack));
 
-    MM_Synth_init(&(s->synth));
-    
+    // Always check if memory allocation succeeded
+    if (s->tracks_arr == NULL && s->n_tracks > 0) {
+        s->n_tracks = 0;
+        log_error("Error building tracks array.");
+        return 0;
+    }
+
+    for (size_t track_i = 0; track_i < s->n_tracks; track_i ++ ){
+        if (MM_AudioTrack_init(
+            &(s->tracks_arr[track_i]),
+            &(p->tracks_arr[track_i]))){
+                log_error("Error initing track %i", track_i);
+            }
+    }
+
+    s->total_t = 0;
+    s->delta_t = 1.0 / AUDIO_FRAMERATE;
+    s->cmd_queue = cmd_q;
+    s->playing = false;
+    s->in_infinite_loop = false;    
+
+    // init sequences
+    s->active_sequence_index = 0;
+    s->active_sequence = &(s->project->sequence_arr[s->active_sequence_index]);
+    s->sequence_t = 0;
+    s->active_sequence_loop_counter = 0;
+    s->next_sequence_break_t = MM_Util_tick_to_s(
+        s->active_sequence->length_beats * s->project->file->ppqn,
+        s->project->file->tempo,
+        s->project->file->ppqn );
+
     // init portaudio
     if ( Pa_Initialize() != paNoError){    
         return 1;
@@ -206,8 +229,6 @@ void MM_Synth_init(MM_Synth *s){
         s->oscillators[i].is_active = false;
         s->oscillators[i].dtheta = (2* PI ) / ((float) AUDIO_FRAMERATE);
     }
-
-
 }
 void MM_Synth_note_on (MM_Synth *s, MidiNote *_n){
     s->active_note = _n;
@@ -226,4 +247,57 @@ float MM_Synth_next_sample(MM_Synth *s, double t){
         return retval;
     }
     return 0;
+}
+int MM_AudioTrack_init( MM_AudioTrack *s, MM_Track *tc ){
+    s->active_midi_file = NULL;
+    s->gain = tc->gain;
+    s->nxt_node = NULL;
+
+    MM_Synth_init( &(s->synth) );
+
+    return 0;
+}
+int MM_AudioTrack_load( MM_AudioTrack *s, MM_Midi_File *midi ){
+
+    s->active_midi_file = midi;
+    s->nxt_node = midi->events.first;
+
+    return 0;
+}
+double MM_AudioTrack_produce( MM_AudioTrack *s, double t_s ){
+
+    return 0;
+    //if (s->nxt_node)
+    // check for sequence break
+    // if ( e->sequence_t >= e->active_sequence
+
+
+
+    // if (e->audio_time >= MM_Util_tick_to_s(e->midi_file->track->total_ticks, e->bpm, e->midi_file->header->ppqn)){
+    //     e->synth.note_on = false;
+    //     out[i] = 0.0;
+    // } else {
+    //     // check if Synth state needs to change
+    //     MM_Event *nxt_evt = e->nxt_node->value;
+    //     double _nxt_evt_t = MM_Util_tick_to_s( nxt_evt->abs_ticks, e->bpm, e->midi_file->header->ppqn);
+        
+    //     if (_nxt_evt_t <= e->audio_time) {
+    //         // event has occured
+    //         if (nxt_evt->status_code == MIDI_NOTE_OFF) {
+    //             // log_debug("paStreamCallback: MIDI_NOTE_OFF at %f s .", _nxt_evt_t );
+    //             e->synth.note_on = false;
+    //         } else if (nxt_evt->status_code == MIDI_NOTE_ON){
+    //             // log_debug("paStreamCallback: MIDI_NOTE_ON at %f s .", _nxt_evt_t );
+    //             e->synth.note_on = true;
+    //             e->synth.active_note = &(nxt_evt->note);
+    //         }
+
+    //         e->nxt_node = e->nxt_node->next;
+    //     }
+
+    //     out[i] = MM_Synth_next_sample( &(e->synth), e->audio_time);
+
+
+    // }
+
 }

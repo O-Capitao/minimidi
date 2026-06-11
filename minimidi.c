@@ -307,7 +307,7 @@ size_t _read_VLQ_delta_t( _Byte *bytes, size_t len, uint64_t *val_ptr)
 *
 *   -> Main Struct Methods
 ****************************************************************************************/
-void _parse_track_events( MM_Track *track, _Byte *evts_chunk )
+void _parse_track_events( MM_MidiTrack *track, _Byte *evts_chunk )
 {
     track->total_ticks = 0;
     
@@ -323,7 +323,7 @@ void _parse_track_events( MM_Track *track, _Byte *evts_chunk )
     while ( _byte_counter < track->length )
     {
 
-        struct MM_Event evt;
+        struct MM_MidiEvent evt;
 
         evt.next = NULL;
         evt.prev = NULL;
@@ -375,57 +375,21 @@ void _parse_track_events( MM_Track *track, _Byte *evts_chunk )
 
 
 
-MM_File* create_mini_midi_file(const char *filepath) {
-    MM_File *midi_file = malloc(sizeof(MM_File));
-    if (!midi_file) return NULL;
+// MM_Midi_File create_mini_midi_file(const char *filepath) {
 
-    midi_file->filepath = strdup(filepath);
-    if (!midi_file->filepath) {
-        free(midi_file);
-        return NULL;
-    }
+// }
 
-    // Allocate and zero-initialize the header
-    midi_file->header = calloc(1, sizeof(MM_Header));
-    if (!midi_file->header) {
-        free(midi_file->filepath);
-        free(midi_file);
-        return NULL;
-    }
-
-    // Set format = 0 and ntrks = 1 by convention for single-track
-    midi_file->header->format = 0;
-    midi_file->header->ntrks = 1;
-
-    // Allocate one track
-    midi_file->track = calloc(1, sizeof(MM_Track));
-    if (!midi_file->track) {
-        free(midi_file->header);
-        free(midi_file->filepath);
-        free(midi_file);
-        return NULL;
-    }
-
-    midi_file->length = 0; // can set this when writing or parsing
-
-    return midi_file;
-}
-
-int hook_up_events( MM_Event *arr, size_t n )
+int hook_up_events( MM_MidiEvent *arr, size_t n )
 {
-    log_debug("minimidi.c > hook_up_events() : Entering");
-
-
+    log_trace("minimidi.c > hook_up_events() : Entering");
 
     int hook_counter = 0;
-    MM_Event *cursor, *cursor2;
+    MM_MidiEvent *cursor, *cursor2;
 
     for (int i = 0; i < n; i++)
     {
 
         cursor = &(arr[i]);
-        
-        // snprintf(log_line, 100, "hook_up_events:: connecting %li", i);
 
         if (cursor->status_code == MIDI_NOTE_ON)
         {            
@@ -435,7 +399,7 @@ int hook_up_events( MM_Event *arr, size_t n )
                 cursor2 = &(arr[j]);
                 if ( cursor2->status_code == MIDI_NOTE_OFF && _compare_MidiNote( &(cursor->note), &(cursor2->note) ))
                 {
-                    log_debug("minimidi.c > hook_up_events() > hooking up %i to %i ", i, j);
+                    log_trace("minimidi.c > hook_up_events() > hooking up %i to %i ", i, j);
                     hook_counter++;
                     cursor->next = cursor2;
                     cursor2->prev = cursor;
@@ -450,19 +414,18 @@ int hook_up_events( MM_Event *arr, size_t n )
 }
 
 // "Class" Methods
-MM_Header *_midi_header_read( _Byte *file_contents )
+MM_Header _midi_header_read( _Byte *file_contents )
 {
 
-    MM_Header *retval = (MM_Header*)malloc( sizeof( struct MM_Header ) );
-    if (!retval) return NULL; 
+    MM_Header retval;
     
     uint32_t aux_for_chunk_size;
     _extract_number_from_byte_array( &aux_for_chunk_size, file_contents, 4, 4 );
-    retval->length = (size_t)aux_for_chunk_size;
+    retval.length = (size_t)aux_for_chunk_size;
 
-    _extract_number_from_byte_array( &(retval->format), file_contents, 8, 2 );
-    _extract_number_from_byte_array( &(retval->ntrks), file_contents, 10, 2 );
-    _extract_number_from_byte_array( &(retval->ppqn), file_contents, 12, 2 );
+    _extract_number_from_byte_array( &(retval.format), file_contents, 8, 2 );
+    _extract_number_from_byte_array( &(retval.ntrks), file_contents, 10, 2 );
+    _extract_number_from_byte_array( &(retval.ppqn), file_contents, 12, 2 );
 
     return retval;
 }
@@ -470,32 +433,27 @@ MM_Header *_midi_header_read( _Byte *file_contents )
 
 
 
-MM_Track *MM_Track_read( _Byte *file_content, size_t start_index, size_t total_chunk_len )
+int MM_MidiTrack_read( MM_MidiTrack *t, _Byte *file_content, size_t start_index, size_t total_chunk_len )
 {
-    MM_Track *track = (MM_Track*)malloc( sizeof( struct MM_Track ) );
     _Byte _track_bin_data[ total_chunk_len ];
 
-    if (!track) return NULL; 
+    log_trace(GREEN  "MM_MidiTrack_read()" RESET "Reading Track Chunk s: Starting at %lu / %lu Bytes.\n", start_index, total_chunk_len);
 
-#if DEBUG
-    printf(GREEN "Reading Track Chunk" RESET ": Starting at %lu / %lu Bytes.\n", start_index, total_chunk_len);
-#endif
-
-    track->length = total_chunk_len;
+    t->length = total_chunk_len;
 
     // ESTIMATE: each event is minimum 3 bytes.
-    size_t max_events = track->length / 3;
-    track->event_arr = (MM_Event*)malloc( max_events * sizeof( MM_Event ) );
+    size_t max_events = t->length / 3;
+    t->event_arr = (MM_MidiEvent*)malloc( max_events * sizeof( MM_MidiEvent ) );
 
-    _extract_number_from_byte_array( &(track->length), file_content, start_index + 4, 4 );
-    _get_substring(file_content, _track_bin_data, start_index + 8, track->length, false );
+    _extract_number_from_byte_array( &(t->length), file_content, start_index + 4, 4 );
+    _get_substring(file_content, _track_bin_data, start_index + 8, t->length, false );
 
     //      total                                    + Chunk Id + Chunk len
-    assert( total_chunk_len == ( start_index + track->length + 4        + 4 ));
-    _parse_track_events( track, _track_bin_data );
-    hook_up_events( track->event_arr, track->n_events );
+    assert( total_chunk_len == ( start_index + t->length + 4        + 4 ));
+    _parse_track_events( t, _track_bin_data );
+    hook_up_events( t->event_arr, t->n_events );
 
-    return track;
+    return 0;
 }
 
 
@@ -511,7 +469,7 @@ void MM_Header_print( MM_Header *mh )
     printf("---------------------------\n");
 }
 
-void MM_Event_print( MM_Event *me )
+void MM_MidiEvent_print( MM_MidiEvent *me )
 {
     printf(TAB TAB "Event:\n");
     printf(TAB TAB "Delta: %lu ticks\n", me->delta_ticks );
@@ -591,54 +549,46 @@ void _midi_status_code_to_str( MidiStatusCode status, char* str )
 
 
 
-void MM_Track_print( MM_Track *mt )
+void MM_MidiTrack_print( MM_MidiTrack *mt )
 {
     printf( BOLDWHITE "TRACK:" RESET "\n---------------------------\n");
     printf( TAB WHITE "Chunk Size:" RESET BOLDWHITE" %li" RESET " bytes\n", mt->length );
     printf( TAB WHITE "Number of Events: %li \n" RESET, mt->n_events );
 
     for (int i = 0; i < mt->n_events; i++ ){
-        MM_Event_print( &(mt->event_arr[i]) );
+        MM_MidiEvent_print( &(mt->event_arr[i]) );
     }
 
     printf("---------------------------\n");
     
 }
 
-void MM_File_free( MM_File *self )
+void MM_File_free( MM_Midi_File *self )
 {
-    if (!self) return;
-
     if (self->filepath) free(self->filepath);
-    if (self->header) free(self->header);
-
-    if (self->track) {
-        // Free event array if it exists
-        if (self->track->event_arr) {
-            free(self->track->event_arr);
-        }
-        free(self->track);
-    }
-
-    free(self);
+    if (self->track.event_arr) free(self->track.event_arr);
 }
 
-void MM_File_print( MM_File *file )
+void MM_File_print( MM_Midi_File *file )
 {
-    MM_Header_print( file->header );
-    MM_Track_print( file->track );
+    MM_Header_print( &(file->header));
+    MM_MidiTrack_print( &(file->track));
 }
 
-MM_File * MM_File_init( char *file_path )
+int MM_File_init( MM_Midi_File *f, char *file_path )
 {
-    MM_File *retval = create_mini_midi_file( file_path );
-    
-    if (!retval) return NULL; 
+
+    f->filepath = strdup(file_path);
+    // Set format = 0 and ntrks = 1 by convention for single-track
+    f->header.format = 0;
+    f->header.ntrks = 1;
+    f->length = 0;
 
     FILE *fileptr;
     fileptr = fopen( file_path, "rb" );
     _Byte * buffer = 0;
     size_t length;
+
 
     int freadres = 0;
     
@@ -654,60 +604,53 @@ MM_File * MM_File_init( char *file_path )
         {
             // fread returns read bytes.
             freadres = fread (buffer, 1, length, fileptr);
-            printf(GREEN "Success" RESET " Read %i bytes.\n", freadres);
+            log_info(GREEN "MM_File_init()" RESET " Read %i bytes.\n", freadres);
         }
 
         fclose (fileptr);
     }
 
-    retval->length = length;
-    retval->header = _midi_header_read( buffer );
-    retval->track = MM_Track_read( buffer, 14, length );
-    retval->track->total_beats = (retval->track->total_ticks / retval->header->ppqn) + 1;
+    f->length = length;
+    f->header = _midi_header_read( buffer );
+    MM_MidiTrack_read( &(f->track), buffer, 14, length );
+    f->track.total_beats = (f->track.total_ticks / f->header.ppqn) + 1;
     
     free( buffer );
 
-    log_info(
-        "MM_File : parsed %s : %ld bytes, got %ld events.",
+    log_info( "MM_File : parsed %s : %ld bytes, got %ld events.",
         file_path,
-        retval->track->length,
-        retval->track->n_events );
+        f->track.length,
+        f->track.n_events );
 
     // log header info
-    log_info(
-        "MM_Header: Chunk Size: %zu, PPQN: %i.",
-        retval->header->length,
-        retval->header->ppqn );
+    log_info( "MM_Header: Chunk Size: %zu, PPQN: %i.",
+        f->header.length,
+        f->header.ppqn );
     
-    retval->bpm = 120;
+    // HERE 
+    MM_MidiEvent_LList _evt_list;
+    MM_MidiEvent_LList_init( &_evt_list );
+    MM_MidiEvent_LList_from_array( &_evt_list, f->track.event_arr, f->track.n_events );
 
-    retval->events = MM_Event_LList_init();
-    MM_Event_LList_from_array( retval->events, retval->track->event_arr, retval->track->n_events );
-
-    return retval;
+    return 0;
 }
 
-unsigned short MM_File_get_bpm( MM_File *f ){
-    return f->bpm;
-}
-
-MM_Event_LList *MM_Event_LList_init()
+int MM_MidiEvent_LList_init(MM_MidiEvent_LList *s)
 {
-    MM_Event_LList *self = (MM_Event_LList *)malloc(sizeof( MM_Event_LList ));
-    self->length = 0;
-    self->first = NULL;
-    self->last = NULL;
+    s->length = 0;
+    s->first = NULL;
+    s->last = NULL;
 
-    return self;
+    return 0;
 }
 
 
 // Kenny Loggings
-void __dump_list_to_log(MM_File *f, MM_Event_LList *l) {
+void __dump_list_to_log(MM_Midi_File *f, MM_MidiEvent_LList *l) {
     char note_str[8];
     char status_str[16];
     int e_counter = 0;
-    MM_Event_LList_Node *cursor = l->first;
+    MM_MidiEvent_LList_Node *cursor = l->first;
 
     while (cursor) {
         _midi_note_to_str(cursor->value->note, note_str);
@@ -718,14 +661,14 @@ void __dump_list_to_log(MM_File *f, MM_Event_LList *l) {
         e_counter++;
     }
 
-    log_debug("minimidi.c > MM_Event_LList > init : Done initing with %i events.", e_counter);
+    log_debug("minimidi.c > MM_MidiEvent_LList > init : Done initing with %i events.", e_counter);
 }
 
 
-int MM_Event_LList_append(MM_Event_LList*self, MM_Event *v)
+int MM_MidiEvent_LList_append(MM_MidiEvent_LList*self, MM_MidiEvent *v)
 {
-    MM_Event_LList_Node *node = (MM_Event_LList_Node *)malloc(sizeof( MM_Event_LList_Node ));
-    MM_Event_LList_Node *aux = 0;
+    MM_MidiEvent_LList_Node *node = (MM_MidiEvent_LList_Node *)malloc(sizeof( MM_MidiEvent_LList_Node ));
+    MM_MidiEvent_LList_Node *aux = 0;
 
     node->next = NULL;
     node->value = v;
@@ -748,7 +691,7 @@ int MM_Event_LList_append(MM_Event_LList*self, MM_Event *v)
     return 0;
 }
 
-void _recurse_and_destroy( MM_Event_LList_Node *node)
+void _recurse_and_destroy( MM_MidiEvent_LList_Node *node)
 {
     if (node->next)
     {
@@ -757,7 +700,7 @@ void _recurse_and_destroy( MM_Event_LList_Node *node)
     free(node);
 }
 
-int _emptyList( MM_Event_LList* self )
+int _emptyList( MM_MidiEvent_LList* self )
 {
     if (self->first)
         _recurse_and_destroy(self->first);
@@ -771,38 +714,38 @@ int _emptyList( MM_Event_LList* self )
 /**
  * Public again
  */
-int MM_Event_LList_destroy(MM_Event_LList*self)
+int MM_MidiEvent_LList_destroy(MM_MidiEvent_LList*self)
 {
     _emptyList( self );
     free(self);
     return 0;
 }
 
-int MM_File_get_events_in_range( MM_File *self,  MM_Event_LList *list, int start_ticks, int end_ticks, int start_note, int end_note )
+int MM_File_get_events_in_range( MM_Midi_File *self,  MM_MidiEvent_LList *list, int start_ticks, int end_ticks, int start_note, int end_note )
 {
     _emptyList(list);
-    MM_Event *evt;
+    MM_MidiEvent *evt;
 
-    for (int i = 0; i < self->track->n_events; i++ )
+    for (int i = 0; i < self->track.n_events; i++ )
     {
-        evt = &(self->track->event_arr[i]);
+        evt = &(self->track.event_arr[i]);
 
         if ( evt->abs_ticks >= start_ticks && evt->abs_ticks <= end_ticks 
             && _midi_note_to_int( &(evt->note) ) >= start_note && _midi_note_to_int( &(evt->note) ) <= end_note )
         {
-            MM_Event_LList_append(list, evt);
+            MM_MidiEvent_LList_append(list, evt);
         }
     }
     
     return 0;
 }
 
-int MM_Event_LList_from_array( MM_Event_LList *list, MM_Event *array, size_t n_events ){
+int MM_MidiEvent_LList_from_array( MM_MidiEvent_LList *list, MM_MidiEvent *array, size_t n_events ){
     int err = 0;
     for (int i = 0; i < n_events; i++){
-        err = MM_Event_LList_append(list, array + i);
+        err = MM_MidiEvent_LList_append(list, array + i);
         if (err){
-            log_error("MM_Event_LList_from_array. err@ %i", i);
+            log_error("MM_MidiEvent_LList_from_array. err@ %i", i);
             return err;
         }
     }

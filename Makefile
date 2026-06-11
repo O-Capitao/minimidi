@@ -1,19 +1,18 @@
-# CFLAGS = -std=c++17 -I. -I/opt/homebrew/Cellar/boost/1.80.0/include/boost \
-# 	-I/opt/homebrew/include \
-# 	`pkg-config --cflags-only-I portaudio-2.0 sndfile fftw3f`
+CC      = gcc
+CFLAGS  = -g -Wall -pedantic -I/usr/include/portaudio
+LDFLAGS = -lncurses -lpanel -lportaudio -lm -lyaml
 
-LDFLAGS = -lncurses -lpanel -lportaudio -lm
+SOURCES    = $(wildcard *.c) $(wildcard */*.c)
+OBJS       = $(SOURCES:.c=.o)
+OUTPUTFILE = minimidi
 
-SOURCES = $(wildcard *.c) $(wildcard */*.c)
+.PHONY: compile clean
 
-OBJS = $(wildcard *.o) $(wildcard */*.o)
+compile: $(OBJS)
+	$(CC) $(CFLAGS) -o $(OUTPUTFILE) $(OBJS) $(LDFLAGS)
 
-OUTPUTFILE=minimidi
-
-NOW := $(shell date +"%c" | tr ' :' '__')
-
-compile: main.c
-	gcc -g -o $(OUTPUTFILE) -g $(SOURCES) $(LDFLAGS) -I/usr/include/portaudio -Wall -pedantic
+%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
 	rm -f $(OUTPUTFILE) $(OBJS)

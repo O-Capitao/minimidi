@@ -5,13 +5,15 @@
 #include "globals.h"
 #include "minimidi.h"
 #include "minimidi-tui.h"
-#include "minimidi-audio.h"
+// #include "minimidi-audio.h"
 #include "minimidi-log.h"
-#include "minimidi-transport.h"
+// #include "minimidi-transport.h"
+// #include "minimidi-file.h"
+#include "minimidi-proj.h"
 
 #define ARG_MAX_LEN 100
 
-void quit( MM_TUI *ui, MM_File *f, int is_error )
+void quit( MM_TUI *ui, MM_Midi_File *f, int is_error )
 {   
     MM_TUI_destroy(ui);
     MM_File_free( f );
@@ -71,45 +73,37 @@ int main( int argc, char *argv[] )
         }
     }
 
+    // Read the project file
+    MM_Project project;
+    MM_Project_init( &project, argv[1] );
 
-    // Read the file passed in by arg
-    MM_File *midi_file = MM_File_init( argv[1] );
-    if (midi_file == NULL) {
-        log_error("Failed to read MIDI file: %s", argv[1]);
-        printf(RED "ERROR" RESET " Failed to read MIDI file: %s\n", argv[1]);
-        return 1;
-    }
-
-    // transport
     MM_Ring_Buffer *cmd_queue = MM_Ring_Buffer__init(128, sizeof(MM_AudioCommand));
 
-
-    // todo: 
-    // dynamic bpm, for now, defined here
-    unsigned int bpm = 120;
-
     MM_AudioEngine eng;
-    MM_AudioEngine_init(&eng, cmd_queue, midi_file, bpm );
-    MM_TUI *ui = (MM_TUI*)malloc( sizeof( MM_TUI ) );
-    MM_TUI_init(ui, midi_file, cmd_queue, &eng, bpm );
+    MM_AudioEngine_init(&eng, &project, cmd_queue );
 
-    int ERRSTATUS = 0;
+    // // MM_TUI *ui = (MM_TUI*)malloc( sizeof( MM_TUI ) );
+    // // MM_TUI_init(ui, &midi_file, cmd_queue, &eng, bpm );
+
+    // // int ERRSTATUS = 0;
 
 
 
-    /**
-     * MAIN LOOP
-     */
-    while (ui->is_running && ERRSTATUS == 0)
-    {
-        ERRSTATUS = MM_TUI_step( ui );
+    // /**
+    //  * MAIN LOOP
+    //  */
+    // while (ui->is_running && ERRSTATUS == 0)
+    // {
+    //     ERRSTATUS = MM_TUI_step( ui );
 
-        if (ERRSTATUS){
-            printf("Like whatever");
-        }
-    }
+    //     if (ERRSTATUS){
+    //         printf("Like whatever");
+    //     }
+    // }
 
-    quit(ui, midi_file, ERRSTATUS ? true: false);
+    // quit(ui, &midi_file, ERRSTATUS ? true: false);
+
+    MM_Project_free( &project );
     log_deinit();
 
     return 0;

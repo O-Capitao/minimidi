@@ -1,0 +1,22 @@
+name: "My Project"
+tempo: 120
+sample_rate: 44000
+ppqn: 0
+beat_per_bar: 0
+track-config:
+  bass:
+    wave: SQUARE
+    gain: 0.8
+sequence:
+- name: "intro"
+  length: "2B"
+  tracks:
+    bass:
+      midi: "midi_test_003.MID"
+      start: "0B2b"
+      loop: true
+      length: "2b"
+    lead:
+      midi: "midi_test_002.MID"
+      loop: true
+      length: "2b"

@@ -1,0 +1,45 @@
+name: "My Project"
+tempo: 120         # unsigned int
+sample_rate: 44000 # unsigned int
+ppqn: 960   # unsiged int
+beat_per_bar: 4
+track-config:
+  bass:
+    wave: SQUARE # enum -> can also be TRIANGLE / SIN
+    gain: 0.8    # double
+  lead:
+    wave: TRIANGLE # enum -> can also be TRIANGLE / SIN
+    gain: 0.96    # double
+sequence:
+  - name: "intro"
+    length: "2B"
+    loop: 1
+    tracks:
+      bass:
+      - midi: "midi_test_003.MID"
+        start: "0B2b"
+        loop: true
+        length: "2b"
+      - midi: "midi_test_003.MID"
+        start: "4b"
+        loop: true
+        length: "2b"
+      lead:
+      - midi: "midi_test_002.MID"
+        start: "0"
+        loop: true
+        length: "2b"
+  - name: "verse"
+    length: "4B"
+    loop: 4   # play this part 4 times
+    tracks:
+      bass:
+      - midi: "bassline1.MID"
+        start: "0" # if "start" is ommitted, assume = 0 
+        loop: true
+        length: "2b"
+      lead:
+      - midi: "midi_test_002.MID"
+        start: "0"
+        loop: true
+        length: "2b"

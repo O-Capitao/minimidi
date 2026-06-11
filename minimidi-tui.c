@@ -100,7 +100,7 @@ int _update_sizes( MM_TUI *self )
 int _snap_to_first_events( MM_TUI *self )
 {
     // find 1st NOTE_ON evt
-    MM_Event *e;
+    MM_MidiEvent *e;
     
     int ind = 0;
 
@@ -406,8 +406,8 @@ int _render_grid( MM_TUI *self ){
 
 int _render_midi( MM_TUI *self )
 {
-    MM_Event_LList_Node *cursor;
-    MM_Event *aux;
+    MM_MidiEvent_LList_Node *cursor;
+    MM_MidiEvent *aux;
 
     MM_File_get_events_in_range(
         self->file,
@@ -526,7 +526,7 @@ int _render_playback( MM_TUI *self ){
 /**
  * PUBLIC
  */
-int MM_TUI_init( MM_TUI *self, MM_File *file, MM_Ring_Buffer *cmd_queue, MM_AudioEngine *audio_engine, unsigned int bpm )
+int MM_TUI_init( MM_TUI *self, MM_Midi_File *file, MM_Ring_Buffer *cmd_queue, MM_AudioEngine *audio_engine, unsigned int bpm )
 {
     self->is_dirty = false;
     self->is_running = true;
@@ -554,8 +554,8 @@ int MM_TUI_init( MM_TUI *self, MM_File *file, MM_Ring_Buffer *cmd_queue, MM_Audi
 
     //
     self->file = file;
-    self->midi_events_screen_list = MM_Event_LList_init();
-    self->midi_events_audio_list = MM_Event_LList_init();
+    self->midi_events_screen_list = MM_MidiEvent_LList_init();
+    self->midi_events_audio_list = MM_MidiEvent_LList_init();
     self->fps = 15;
 
     // INIT PLAYBACK STUFF
@@ -616,7 +616,7 @@ int MM_TUI_step( MM_TUI *self ){
     double ellapsed_s;
 
     step_start = clock();
-    log_debug("Entering MM_TUI_step.");
+    log_trace("Entering MM_TUI_step.");
 
     // get input
     _handle_input( self );

@@ -63,7 +63,7 @@ typedef struct MM_Header
 
 } MM_Header;
 
-typedef struct MM_Event
+typedef struct MM_MidiEvent
 {
     uint64_t       delta_ticks, 
                    abs_ticks;
@@ -74,46 +74,43 @@ typedef struct MM_Event
 
     // if a sequence is implied, such as NOTE ON / OFF pair,
     // use this to hook up related events
-    struct MM_Event *next, *prev;
+    struct MM_MidiEvent *next, *prev;
 
-} MM_Event;
+} MM_MidiEvent;
 
-typedef struct MM_Track
+typedef struct MM_MidiTrack
 {
     size_t          length;
     size_t          n_events;
-    MM_Event       *event_arr;
+    MM_MidiEvent       *event_arr;
     size_t          total_ticks,
                     total_beats;
-} MM_Track;
+} MM_MidiTrack;
 
 /****************************************************************************************
 *
 *
 *   -> Aux Data Structures -> For lookup / state edit
 ****************************************************************************************/
-typedef struct MM_Event_LList_Node
+typedef struct MM_MidiEvent_LList_Node
 {
-    MM_Event *value;
-    
-    struct MM_Event_LList_Node *next;
+    MM_MidiEvent *value;
+    struct MM_MidiEvent_LList_Node *next;
 
-} MM_Event_LList_Node;
+} MM_MidiEvent_LList_Node;
 
-typedef struct MM_Event_LList
+typedef struct MM_MidiEvent_LList
 {   
     size_t length;
-    
-    MM_Event_LList_Node *first,
-        *last;
+    MM_MidiEvent_LList_Node *first, *last;
    
-} MM_Event_LList;
+} MM_MidiEvent_LList;
 
-MM_Event_LList *MM_Event_LList_init         ();
-int             MM_Event_LList_destroy      ( MM_Event_LList *self );
+int             MM_MidiEvent_LList_init         ( MM_MidiEvent_LList *self );
+int             MM_MidiEvent_LList_destroy      ( MM_MidiEvent_LList *self );
 
-int             MM_Event_LList_from_array   ( MM_Event_LList *list, MM_Event *array, size_t n_events );
-void            MM_Event_LList__print_to_str( MM_Event_LList *list, char *output );
+int             MM_MidiEvent_LList_from_array   ( MM_MidiEvent_LList *list, MM_MidiEvent *array, size_t n_events );
+void            MM_MidiEvent_LList__print_to_str( MM_MidiEvent_LList *list, char *output );
 
 
 
@@ -126,22 +123,20 @@ void            MM_Event_LList__print_to_str( MM_Event_LList *list, char *output
 *
 *   -> Main Exposed Structure -> Midi File
 ****************************************************************************************/
-typedef struct MM_File
+typedef struct MM_Midi_File
 {
-    char            *filepath;
-    MM_Header       *header;
-    MM_Track        *track;
-    unsigned short   bpm;
-    size_t           length;
-    MM_Event_LList  *events; // for use by UI
+    char               *filepath;
+    MM_Header           header;
+    MM_MidiTrack        track;
+    size_t              length;
+    MM_MidiEvent_LList  events; // for use by UI
 
-} MM_File;
+} MM_Midi_File;
 
-MM_File       *MM_File_init                 ( char *file_path );
-void           MM_File_free                 ( MM_File *file );
-unsigned short MM_File_get_bpm              ( MM_File *file );
-// int            MM_File_get_event_at_s       ( MM_File *file, MM_Event_LList *container, float s, float delta_t );
-int            MM_File_get_events_in_range  ( MM_File *file, MM_Event_LList *list, int start_ticks, int end_ticks, int start_note, int end_note );
+int            MM_File_init                 ( MM_Midi_File *file, char *file_path );
+void           MM_File_free                 ( MM_Midi_File *file );
+unsigned short MM_File_get_bpm              ( MM_Midi_File *file );
+int            MM_File_get_events_in_range  ( MM_Midi_File *file, MM_MidiEvent_LList *list, int start_ticks, int end_ticks, int start_note, int end_note );
 
 /* MM Utils*/
 double       MM_Util_tick_to_s( unsigned int ticks, unsigned short bpm, unsigned int ppqn);
