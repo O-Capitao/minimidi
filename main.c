@@ -13,17 +13,6 @@
 
 #define ARG_MAX_LEN 100
 
-void quit( MM_TUI *ui, MM_Midi_File *f, int is_error )
-{   
-    MM_TUI_destroy(ui);
-    MM_File_free( f );
-    if (is_error)
-    {
-        log_error("An error occurred, quitting.");
-        printf(RED "ERROR" RESET " Houston we have a problem...\n");
-    }
-}
-
 /***
  *  MAIN!
  */
@@ -82,28 +71,34 @@ int main( int argc, char *argv[] )
     MM_AudioEngine eng;
     MM_AudioEngine_init(&eng, &project, cmd_queue );
 
+    MM_TUI tui;
+    MM_TUI_init(&tui, &project, cmd_queue, &eng);
+    
     // // MM_TUI *ui = (MM_TUI*)malloc( sizeof( MM_TUI ) );
     // // MM_TUI_init(ui, &midi_file, cmd_queue, &eng, bpm );
 
-    // // int ERRSTATUS = 0;
+    int ERRSTATUS = 0;
 
 
 
     // /**
     //  * MAIN LOOP
     //  */
-    // while (ui->is_running && ERRSTATUS == 0)
-    // {
-    //     ERRSTATUS = MM_TUI_step( ui );
+    while (tui.is_running && ERRSTATUS == 0)
+    {
+        ERRSTATUS = MM_TUI_step( &tui );
 
-    //     if (ERRSTATUS){
-    //         printf("Like whatever");
-    //     }
-    // }
+        if (ERRSTATUS){
+            printf("Like whatever");
+        }
+    }
 
+    
     // quit(ui, &midi_file, ERRSTATUS ? true: false);
 
     MM_Project_free( &project );
+    MM_TUI_destroy( &tui );
+
     log_deinit();
 
     return 0;

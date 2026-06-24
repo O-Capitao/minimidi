@@ -26,6 +26,8 @@ typedef struct {
 } MM_Sequence;
 
 typedef struct {
+
+    unsigned int ppqn;
     MM_File_Project *file;
 
     MM_Mid_Map_Entry *midi_map;  // head of the hash table
