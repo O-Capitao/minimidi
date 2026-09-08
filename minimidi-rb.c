@@ -1,4 +1,5 @@
 #include "minimidi-rb.h"
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -7,12 +8,18 @@ static inline size_t _next_index(size_t i, size_t size) {
 }
 
 MM_Ring_Buffer *MM_Ring_Buffer__init(size_t capacity, size_t item_size) {
+    if (capacity == 0 || item_size == 0 || capacity == SIZE_MAX
+        || (capacity + 1) > SIZE_MAX / item_size) return NULL;
     MM_Ring_Buffer *rb = malloc(sizeof(MM_Ring_Buffer));
     if (!rb) return NULL;
 
     rb->size = capacity + 1;  // one slot unused (classic ringbuffer trick)
     rb->item_size = item_size;
     rb->buffer = malloc(rb->size * item_size);
+    if (!rb->buffer) {
+        free(rb);
+        return NULL;
+    }
 
     atomic_store(&rb->head, 0);
     atomic_store(&rb->tail, 0);
@@ -27,6 +34,7 @@ void MM_Ring_Buffer__free(MM_Ring_Buffer *rb) {
 }
 
 bool MM_Ring_Buffer__push(MM_Ring_Buffer *rb, const void *item) {
+    if (!rb || !item) return false;
     size_t head = atomic_load_explicit(&rb->head, memory_order_relaxed);
     size_t tail = atomic_load_explicit(&rb->tail, memory_order_acquire);
 
@@ -43,6 +51,7 @@ bool MM_Ring_Buffer__push(MM_Ring_Buffer *rb, const void *item) {
 }
 
 bool MM_Ring_Buffer__pop(MM_Ring_Buffer *rb, void *out_item) {
+    if (!rb || !out_item) return false;
     size_t tail = atomic_load_explicit(&rb->tail, memory_order_relaxed);
     size_t head = atomic_load_explicit(&rb->head, memory_order_acquire);
 
@@ -57,9 +66,11 @@ bool MM_Ring_Buffer__pop(MM_Ring_Buffer *rb, void *out_item) {
 }
 
 bool MM_Ring_Buffer__is_empty(const MM_Ring_Buffer *rb) {
+    if (!rb) return true;
     return atomic_load(&rb->head) == atomic_load(&rb->tail);
 }
 
 size_t MM_Ring_Buffer__capacity(const MM_Ring_Buffer *rb) {
+    if (!rb) return 0;
     return rb->size - 1;
 }

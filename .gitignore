@@ -54,3 +54,8 @@ dkms.conf
 *.o
 *.mid
 MYNOTEZ.md
+
+# MiniMIDI build/runtime output
+/minimidi
+/minimidi.log
+/tests/test_refactor

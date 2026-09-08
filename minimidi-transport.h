@@ -5,7 +5,7 @@ typedef enum CommandType {
     MM_CMD_PLAY,
     MM_CMD_PAUSE,
     MM_CMD_STOP,
-    MM_CMD_BACK_TO_BEGINING
+    MM_CMD_BACK_TO_BEGINNING
 } CommandType;
 
 typedef struct MM_AudioCommand {

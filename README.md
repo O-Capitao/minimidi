@@ -37,7 +37,7 @@ sequence:
         length: "2b"
   - name: "verse"
     length: "4B"
-    loop: 4   # play this part 4 times
+    n_repeats: 4   # total plays; 0 repeats forever
     tracks:
       bass:
       - midi: "midi_test_005.MID"
@@ -51,13 +51,26 @@ sequence:
         length: "2b"
 ```
 
-A MM_File_read function, taking in the yaml file path should parse these contents into a set of structs: MM_File_Project, and nested within: MM_File_TrackConfig and an array of MM_File_Sequence.
+`MM_Proj_File_read`, taking the YAML file path, parses these contents into a
+`MM_File_Project`, with nested `MM_File_TrackConfig` and `MM_File_Sequence`
+arrays. Relative MIDI paths are resolved from the YAML file's directory.
 Each MM_File_Sequence in turn contains a number of MM_File_Sequence_Track ("bass" - "lead" - etc). NOTE: the name of the MM_File_Sequence_Track MUST match a defined MM_File_TrackConfig, other wise an error should be thrown.
 
 Each MM_File_Sequence_Track contains a pointer to the corresponding MM_File_TrackConfig and an array of MM_File_Sequence_Track_Midi_Assignment.
 
 ## How it should work
-A MM_File_write, taking a pointer into a MM_File_Project and a file path, should write the contents into a structure such as the one shown above.
+`MM_Proj_File_write`, taking a pointer to an `MM_File_Project` and a file path,
+writes the same hierarchy, replacing the destination if it exists.
+
+Sequence `n_repeats` is the total number of plays and defaults to `1`; `0`
+means repeat forever. The legacy sequence property `loop` is accepted when
+reading but writers always emit `n_repeats`. Assignment `start` is placement in
+the sequence. Assignment `length` truncates the clip and defaults to the MIDI
+file's natural duration. Assignments on one logical track may not overlap.
+
+Project tempo always controls playback. MIDI tempo events are ignored, format-0
+and format-1 files are accepted, format-1 tracks are flattened, and MIDI ticks
+are rescaled to the project PPQN.
 
 
 
@@ -72,14 +85,14 @@ If the file in the passed path does not exist then a new file should be created.
 
 
 
-## Notes aboout length strings, e.g.: "2B2b":
-This is relevant for all "start" and "length" properties in the file:
+## Time strings
 
-- length strings, looking like "0B1b2t" are used as a way to compress midi time information into a compressed, yet human readable form. The logic is that the number that is shown before "B" is the number of bars, before "b" comes a number of beats. The length is the sum of the two parcels, given that each bar will contain "beat_per_bar beats. 
-Either of the 2 can be ommited e.g: "4b" -> 4 beats, "1B" -> beat_per_bar * 
+Every `start` and `length` uses an ordered compact time string. `B` means bars,
+`b` means beats, and `t` means ticks, so `0B1b2t` is one beat and two ticks.
+Components may be omitted (`4b`, `1B`, or `12t`), and literal `0` means zero.
+Components cannot be repeated or reordered, and fractional values are rejected.
 
-
-The parser should take care to unpack this string into a single unsigned int - "start_beats" or "length_beats" - containing the value in beats in the MM_File_Project type, and store the original string value in "length_string" for debugging. If a "0" value is found, then it translates to 0.
-
-
+The parsed model retains each original string, stores an exact `uint64_t` tick
+value, and exposes a derived fractional beat value. Bar conversion uses the
+project's `beat_per_bar`, and tick conversion uses its `ppqn`.
 

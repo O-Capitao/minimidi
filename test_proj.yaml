@@ -13,7 +13,7 @@ track-config:
 sequence:
   - name: "intro"
     length: "2B"
-    loop: 1
+    n_repeats: 1
     tracks:
       bass:
       - midi: "midi_test_003.MID"
@@ -31,7 +31,7 @@ sequence:
         length: "2b"
   - name: "verse"
     length: "4B"
-    loop: 4   # play this part 4 times
+    n_repeats: 4   # play this part 4 times
     tracks:
       bass:
       - midi: "bassline1.MID"

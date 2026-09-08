@@ -1,761 +1,386 @@
-#include <string.h>
-#include <assert.h>
-#include <stdio.h>
-#include <unistd.h>
-#include <math.h>
-
 #include "minimidi.h"
 
+#include "minimidi-log.h"
 
+#include <errno.h>
+#include <math.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
+typedef struct {
+    MM_MidiEvent *items;
+    size_t count;
+    size_t capacity;
+} EventVector;
 
-/****************************************************************************************
-*
-*
-*   -> Utility  Functions
-****************************************************************************************/
-void print_byte_as_binary(_Byte *byte, int little_endian)
+static void midi_error(const char *path, const char *format, ...)
 {
-    if (byte == NULL) {
-        printf("Null pointer received.\n");
-        return;
-    }
+    char message[512];
+    va_list arguments;
+    va_start(arguments, format);
+    vsnprintf(message, sizeof(message), format, arguments);
+    va_end(arguments);
+    fprintf(stderr, "MIDI '%s': %s\n", path, message);
+    log_error("MIDI '%s': %s", path, message);
+}
 
-    if (little_endian) {
-        // Print from LSB to MSB (Little Endian Representation)
-        for (int i = 0; i < 8; i++) {
-            printf("%c", (*byte & (1 << i)) ? '1' : '0');
+static uint16_t read_be16(const uint8_t *p)
+{
+    return (uint16_t)(((uint16_t)p[0] << 8) | p[1]);
+}
+
+static uint32_t read_be32(const uint8_t *p)
+{
+    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16)
+         | ((uint32_t)p[2] << 8) | p[3];
+}
+
+static int read_vlq(const uint8_t *data, size_t size, size_t *position,
+                    uint32_t *value)
+{
+    uint32_t result = 0;
+    unsigned int bytes = 0;
+
+    do {
+        uint8_t byte;
+        if (*position >= size || bytes++ == 4) return -1;
+        byte = data[(*position)++];
+        if (result > (UINT32_MAX >> 7)) return -1;
+        result = (result << 7) | (uint32_t)(byte & 0x7f);
+        if ((byte & 0x80) == 0) {
+            *value = result;
+            return 0;
         }
-    } else {
-        // Print from MSB to LSB (Big Endian Representation)
-        for (int i = 7; i >= 0; i--) {
-            printf("%c", (*byte & (1 << i)) ? '1' : '0');
-        }
-    }
+    } while (true);
 }
 
-
-
-
-
-// Function to get MIDI Status Code from a byte
-MidiStatusCode _get_midi_status_code( _Byte *byte)
+static int append_event(EventVector *events, const MM_MidiEvent *event)
 {
-    // Extract the status nibble (upper 4 bits)
-    _Byte status = *byte & 0xF0;
-    
-    // Check if it's a valid MIDI status byte (first bit must be 1)
-    if (!(*byte & 0x80)) {
-        return MIDI_INVALID;
-    }
+    MM_MidiEvent *grown;
+    size_t capacity;
 
-    switch (status) {
-        case 0x80: // 0b10000000
-            return MIDI_NOTE_OFF;
-        case 0x90: // 0b10010000
-            return MIDI_NOTE_ON;
-        case 0xA0:
-            return MIDI_POLY_AFTERTOUCH;
-        case 0xB0:
-            return MIDI_CONTROL_CHANGE;
-        case 0xC0:
-            return MIDI_PROGRAM_CHANGE;
-        case 0xD0:
-            return MIDI_CHAN_AFTERTOUCH;
-        case 0xE0:
-            return MIDI_PITCH_BEND;
-        case 0xF0:
-            return MIDI_SYSTEM;
-        default:
-            return MIDI_INVALID;
+    if (events->count == events->capacity) {
+        capacity = events->capacity == 0 ? 64 : events->capacity * 2;
+        if (capacity > SIZE_MAX / sizeof(*grown)) return -1;
+        grown = realloc(events->items, capacity * sizeof(*grown));
+        if (!grown) return -1;
+        events->items = grown;
+        events->capacity = capacity;
     }
+    events->items[events->count++] = *event;
+    return 0;
 }
 
-
-void _print_midi_status_code(MidiStatusCode status)
+static MidiNote midi_note(uint8_t number)
 {
-    printf(CYAN "MIDI Status: " RESET);
-    
-    switch (status) {
-        case MIDI_NOTE_OFF:
-            printf("Note Off (0x80)\n");
-            break;
-        case MIDI_NOTE_ON:
-            printf("Note On (0x90)\n");
-            break;
-        case MIDI_POLY_AFTERTOUCH:
-            printf("Polyphonic Aftertouch (0xA0)\n");
-            break;
-        case MIDI_CONTROL_CHANGE:
-            printf("Control Change (0xB0)\n");
-            break;
-        case MIDI_PROGRAM_CHANGE:
-            printf("Program Change (0xC0)\n");
-            break;
-        case MIDI_CHAN_AFTERTOUCH:
-            printf("Channel Aftertouch (0xD0)\n");
-            break;
-        case MIDI_PITCH_BEND:
-            printf("Pitch Bend (0xE0)\n");
-            break;
-        case MIDI_SYSTEM:
-            printf("System Message (0xF0)\n");
-            break;
-        case MIDI_INVALID:
-            printf("Invalid Status (0x00)\n");
-            break;
-        default:
-            printf("Unknown Status Code\n");
-            break;
-    }
-}
-
-
-
-
-uint8_t _get_midi_data_byte_count(MidiStatusCode status)
-{
-
-    switch (status) {
-        case MIDI_NOTE_OFF:        // 0x80
-        case MIDI_NOTE_ON:         // 0x90
-        case MIDI_POLY_AFTERTOUCH: // 0xA0
-        case MIDI_CONTROL_CHANGE:  // 0xB0
-        case MIDI_PITCH_BEND:      // 0xE0
-            return 2;              // These events all take 2 data bytes
-
-        case MIDI_PROGRAM_CHANGE:  // 0xC0
-        case MIDI_CHAN_AFTERTOUCH: // 0xD0
-            return 1;              // These take 1 data byte
-
-        case MIDI_SYSTEM:          // 0xF0
-            // System messages like SysEx have variable length,
-            // but for basic handling, we’ll assume it’s incomplete here
-            return 0;              // Could expand this for SysEx later
-
-        case MIDI_INVALID:         // 0x00
-        default:
-            return 0;              // Invalid or unrecognized status
-    }
-}
-
-
-
-
-MidiNote _event_data_bytes_to_note( _Byte event_data_byte )
-{
-
     MidiNote result;
-    
-    // Ensure note_number is in valid MIDI range (0-127)
-    if (event_data_byte > 127) {
-        event_data_byte = 127;  // Clamp to max MIDI value
-    }
-    
-    // Extract chromatic note (0-11) using modulo
-    result.note = (Note)(event_data_byte % 12);
-    
-    // Calculate octave
-    // MIDI note 0 = C-1, 12 = C0, 24 = C1, ..., 60 = C4, etc.
-    // So we divide by 12 and subtract 1 to get standard octave numbers
-    result.octave = (event_data_byte / 12) - 1;
-    
+    result.note = (Note)(number % 12);
+    result.octave = (int8_t)((int)number / 12 - 1);
     return result;
 }
 
-
-
-
-void _print_midi_note(MidiNote note)
+static int parse_track(const uint8_t *data, size_t size, EventVector *events,
+                       uint64_t *track_end)
 {
+    size_t position = 0;
+    uint64_t absolute_tick = 0;
+    uint8_t running_status = 0;
 
-    switch (note.note) {
-        case C:
-            printf("C");
-            break;
-        case Cs:
-            printf("C#");
-            break;
-        case D:
-            printf("D");
-            break;
-        case Ds:
-            printf("D#");
-            break;
-        case E:
-            printf("E");
-            break;
-        case F:
-            printf("F");
-            break;
-        case Fs:
-            printf("F#");
-            break;
-        case G:
-            printf("G");
-            break;
-        case Gs:
-            printf("G#");
-            break;
-        case A:
-            printf("A");
-            break;
-        case As:
-            printf("A#");
-            break;
-        case B:
-            printf("B");
-            break;
-        default:
-            printf("Invalid note\n");
-            break;
-    }
+    while (position < size) {
+        uint32_t delta;
+        uint8_t status;
+        uint8_t data1;
+        uint8_t data2 = 0;
+        unsigned int data_count;
+        MM_MidiEvent event;
 
-    printf(" Oct: %hu ", note.octave );
-}
+        if (read_vlq(data, size, &position, &delta) != 0
+            || UINT64_MAX - absolute_tick < delta) return -1;
+        absolute_tick += delta;
+        if (position >= size) return -1;
 
-
-bool _compare_MidiNote(MidiNote *a, MidiNote *b)
-{
-    return (a->note == b->note) && (a->octave == b->octave);
-}
-
-int _midi_note_to_int( MidiNote *n )
-{
-    return (int)(n->note) + (n->octave) * 12;
-}
-
-void _reverse_byte_array(_Byte* arr, size_t len)
-{
-    _Byte aux;
-    for (size_t i = 0; i < len / 2; i++)
-    {
-        aux = arr[i];
-        arr[i] = arr[len-1-i];
-        arr[len-1-i] = aux;
-    }
-}
-
-
-
-
-void _extract_number_from_byte_array( void* tgt, _Byte* src, size_t start_ind, size_t len )
-{
-    _Byte extracted_bytes[len];
-    memcpy( extracted_bytes, &src[start_ind], len );
-
-    _reverse_byte_array( extracted_bytes, len );
-    memcpy(tgt, extracted_bytes, len);
-}
-
-
-
-
-void _get_substring(_Byte *src_str, _Byte* tgt_str, size_t start_index, size_t n_elements_to_copy, bool add_null_termination )
-{
-    memcpy( tgt_str, &src_str[start_index], n_elements_to_copy );
-
-    if (add_null_termination)
-    {
-        tgt_str[ n_elements_to_copy ] = '\0';
-    }
-}
-
-
-
-
-size_t _read_VLQ_delta_t( _Byte *bytes, size_t len, uint64_t *val_ptr)
-{
-    size_t _index = 0;
-    _Byte _curr_byte;
-
-
-
-    const _Byte _sign_bit_mask =    0x80; // 0b10000000
-    const _Byte _7_last_bits_mask = 0x7F; // 0b01111111
-
-    unsigned long retval = 0; // 4 bytes maximum...
-
-    while ( _index < len )
-    {
-        // grab a byte
-        _curr_byte = bytes[_index++];
-
-
-
-        retval<<=7;
-        retval += ( _curr_byte & _7_last_bits_mask );
-
-        if ( ( _curr_byte & _sign_bit_mask ) == 0 )
-        {
-            break;
-        }
-    }
-
-    *val_ptr = retval;
-
-
-
-    return _index;
-}
-
-
-
-
-/****************************************************************************************
-*
-*
-*   -> Main Struct Methods
-****************************************************************************************/
-void _parse_track_events( MM_MidiTrack *track, _Byte *evts_chunk )
-{
-    track->total_ticks = 0;
-    
-    size_t _byte_counter = 0;
-    size_t _event_counter = 0;
-
-
-    // Last status byte for running status handling.
-    _Byte *_last_status_byte = NULL;
-    // _Byte *_next_byte = NULL;
-    uint8_t _data_bytes_count = 0;
-
-    while ( _byte_counter < track->length )
-    {
-
-        struct MM_MidiEvent evt;
-
-        evt.next = NULL;
-        evt.prev = NULL;
-
-        _byte_counter += _read_VLQ_delta_t( evts_chunk + _byte_counter, track->length - _byte_counter, &(evt.delta_ticks));
-        track->total_ticks += evt.delta_ticks;
-        evt.abs_ticks = track->total_ticks;
-
-
-        if ( *(evts_chunk + _byte_counter) >= 0x80 )
-        {
-            // This is a new status byte (has the high bit set)
-            evt.status_code = _get_midi_status_code((evts_chunk + _byte_counter));
-            _last_status_byte = (evts_chunk + _byte_counter);  // Remember for running status
-            _byte_counter++;
-
+        status = data[position];
+        if (status & 0x80) {
+            position++;
+            if (status < 0xf0) running_status = status;
         } else {
-            // No new status byte — use running status
-
-
-            evt.status_code = _get_midi_status_code(_last_status_byte);
-            // Note: byte_counter not incremented here, since there's no status byte.
+            if (running_status == 0) return -1;
+            status = running_status;
         }
 
-        if (evt.status_code == MIDI_INVALID) {
-            printf(RED "Invalid status byte detected — aborting!\n" RESET);
-            return;
+        if (status == 0xff) {
+            uint32_t length;
+            running_status = 0;
+            if (position >= size) return -1;
+            position++;
+            if (read_vlq(data, size, &position, &length) != 0
+                || length > size - position) return -1;
+            position += length;
+            continue;
         }
-
-         _data_bytes_count = _get_midi_data_byte_count( evt.status_code );
-
-         // extract databytes
-        // when do we care?
-        //  when evt is a Note On, and never elses
-        if (evt.status_code == MIDI_NOTE_ON || evt.status_code == MIDI_NOTE_OFF)
-        {
-            evt.note = _event_data_bytes_to_note(*(evts_chunk + _byte_counter));
-
+        if (status == 0xf0 || status == 0xf7) {
+            uint32_t length;
+            running_status = 0;
+            if (read_vlq(data, size, &position, &length) != 0
+                || length > size - position) return -1;
+            position += length;
+            continue;
         }
-        _byte_counter += _data_bytes_count;
+        if (status >= 0xf0) return -1;
 
-        track->event_arr[_event_counter ++] = evt;
+        data_count = ((status & 0xf0) == 0xc0 || (status & 0xf0) == 0xd0) ? 1 : 2;
+        if (data_count > size - position) return -1;
+        data1 = data[position++];
+        if (data_count == 2) data2 = data[position++];
+        if ((data1 & 0x80) || (data2 & 0x80)) return -1;
+        if ((status & 0xf0) != MIDI_NOTE_ON
+            && (status & 0xf0) != MIDI_NOTE_OFF) continue;
 
+        memset(&event, 0, sizeof(event));
+        event.delta_ticks = delta;
+        event.abs_ticks = absolute_tick;
+        event.status_code = (MidiStatusCode)(status & 0xf0);
+        if (event.status_code == MIDI_NOTE_ON && data2 == 0)
+            event.status_code = MIDI_NOTE_OFF;
+        event.channel = status & 0x0f;
+        event.note_number = data1;
+        event.evt_data[0] = data1;
+        event.evt_data[1] = data2;
+        event.note = midi_note(data1);
+        if (append_event(events, &event) != 0) return -1;
     }
-    track->n_events = _event_counter;
-    // track->total_beats = track->total_ticks / ppqn;
+
+    *track_end = absolute_tick;
+    return 0;
 }
 
-
-
-
-// MM_Midi_File create_mini_midi_file(const char *filepath) {
-
-// }
-
-int hook_up_events( MM_MidiEvent *arr, size_t n )
+static int compare_events(const void *left, const void *right)
 {
-    log_trace("minimidi.c > hook_up_events() : Entering");
+    const MM_MidiEvent *a = left;
+    const MM_MidiEvent *b = right;
+    if (a->abs_ticks < b->abs_ticks) return -1;
+    if (a->abs_ticks > b->abs_ticks) return 1;
+    if (a->status_code == MIDI_NOTE_OFF && b->status_code == MIDI_NOTE_ON) return -1;
+    if (a->status_code == MIDI_NOTE_ON && b->status_code == MIDI_NOTE_OFF) return 1;
+    return 0;
+}
 
-    int hook_counter = 0;
-    MM_MidiEvent *cursor, *cursor2;
+static void link_note_pairs(MM_MidiEvent *events, size_t count)
+{
+    MM_MidiEvent *active[16][128] = {{NULL}};
+    size_t i;
 
-    for (int i = 0; i < n; i++)
-    {
-
-        cursor = &(arr[i]);
-
-        if (cursor->status_code == MIDI_NOTE_ON)
-        {            
-            // odds are that a NOTE OFF exists for this note
-            for (int j = i; j < n; j++)
-            {
-                cursor2 = &(arr[j]);
-                if ( cursor2->status_code == MIDI_NOTE_OFF && _compare_MidiNote( &(cursor->note), &(cursor2->note) ))
-                {
-                    log_trace("minimidi.c > hook_up_events() > hooking up %i to %i ", i, j);
-                    hook_counter++;
-                    cursor->next = cursor2;
-                    cursor2->prev = cursor;
-
-                    break;
-                }
+    for (i = 0; i < count; i++) {
+        MM_MidiEvent *event = &events[i];
+        event->next = NULL;
+        event->prev = NULL;
+        if (event->status_code == MIDI_NOTE_ON) {
+            active[event->channel][event->note_number] = event;
+        } else if (event->status_code == MIDI_NOTE_OFF) {
+            MM_MidiEvent *on = active[event->channel][event->note_number];
+            if (on) {
+                on->next = event;
+                event->prev = on;
+                active[event->channel][event->note_number] = NULL;
             }
         }
     }
-
-    return hook_counter;
 }
 
-// "Class" Methods
-MM_Header _midi_header_read( _Byte *file_contents )
+static void list_clear(MM_MidiEvent_LList *list)
 {
-
-    MM_Header retval;
-    
-    uint32_t aux_for_chunk_size;
-    _extract_number_from_byte_array( &aux_for_chunk_size, file_contents, 4, 4 );
-    retval.length = (size_t)aux_for_chunk_size;
-
-    _extract_number_from_byte_array( &(retval.format), file_contents, 8, 2 );
-    _extract_number_from_byte_array( &(retval.ntrks), file_contents, 10, 2 );
-    _extract_number_from_byte_array( &(retval.ppqn), file_contents, 12, 2 );
-
-    return retval;
-}
-
-
-
-
-int MM_MidiTrack_read( MM_MidiTrack *t, _Byte *file_content, size_t start_index, size_t total_chunk_len )
-{
-    _Byte _track_bin_data[ total_chunk_len ];
-
-    log_trace(GREEN  "MM_MidiTrack_read()" RESET "Reading Track Chunk s: Starting at %lu / %lu Bytes.\n", start_index, total_chunk_len);
-
-    t->length = total_chunk_len;
-
-    // ESTIMATE: each event is minimum 3 bytes.
-    size_t max_events = t->length / 3;
-    t->event_arr = (MM_MidiEvent*)malloc( max_events * sizeof( MM_MidiEvent ) );
-
-    _extract_number_from_byte_array( &(t->length), file_content, start_index + 4, 4 );
-    _get_substring(file_content, _track_bin_data, start_index + 8, t->length, false );
-
-    //      total                                    + Chunk Id + Chunk len
-    assert( total_chunk_len == ( start_index + t->length + 4        + 4 ));
-    _parse_track_events( t, _track_bin_data );
-    hook_up_events( t->event_arr, t->n_events );
-
-    return 0;
-}
-
-
-
-
-void MM_Header_print( MM_Header *mh )
-{
-    printf(BOLDWHITE "HEADER:\n---------------------------\n" RESET);
-    printf(TAB WHITE "Chunk Size:" RESET BOLDWHITE " %zu" RESET " bytes\n", mh->length );
-    printf(TAB WHITE "Format Code:" RESET " %i.\n", mh->format);
-    printf(TAB WHITE "Number Of Tracks:" RESET " %i.\n", mh->ntrks);
-    printf(TAB WHITE "Division:" RESET " %i PPQN.\n", mh->ppqn);
-    printf("---------------------------\n");
-}
-
-void MM_MidiEvent_print( MM_MidiEvent *me )
-{
-    printf(TAB TAB "Event:\n");
-    printf(TAB TAB "Delta: %lu ticks\n", me->delta_ticks );
-    printf(TAB TAB "Status Code: ");
-    _print_midi_status_code(me->status_code);
-    printf("\n");
-    printf(TAB TAB "Note: ");
-    _print_midi_note(me->note);
-    printf("\n");
-    printf(TAB TAB "----\n");
-}
-
-// FOR LOGGINING
-void _midi_note_to_str(MidiNote note, char *str)
-{
-
-    switch (note.note) {
-        case C:
-            sprintf(str, "C%d", note.octave );
-            break;
-        case Cs:
-            sprintf(str, "C#%d", note.octave );
-            break;
-        case D:
-            sprintf(str, "D%d", note.octave );
-            break;
-        case Ds:
-            sprintf(str, "D#%d", note.octave );
-            break;
-        case E:
-            sprintf(str, "E%d", note.octave );
-            break;
-        case F:
-            sprintf(str, "F%d", note.octave );
-            break;
-        case Fs:
-            sprintf(str, "F#%d", note.octave );
-            break;
-        case G:
-            sprintf(str, "G%d", note.octave );
-            break;
-        case Gs:
-            sprintf(str, "G#%d", note.octave );
-            break;
-        case A:
-            sprintf(str, "A%d", note.octave );
-            break;
-        case As:
-            sprintf(str, "A#%d", note.octave );
-            break;
-        case B:
-            sprintf(str, "B%d", note.octave );
-            break;
-        default:
-            sprintf(str, "XX");
-            break;
+    MM_MidiEvent_LList_Node *node = list->first;
+    while (node) {
+        MM_MidiEvent_LList_Node *next = node->next;
+        free(node);
+        node = next;
     }
+    list->first = NULL;
+    list->last = NULL;
+    list->length = 0;
 }
 
-void _midi_status_code_to_str( MidiStatusCode status, char* str )
+static int list_append(MM_MidiEvent_LList *list, MM_MidiEvent *event)
 {
-    switch (status)
-    {
-        case MIDI_NOTE_OFF:
-            sprintf( str, "NOTE_OFF" );
-            break;
-        case MIDI_NOTE_ON:
-            sprintf( str, "NOTE_ON" );
-            break;
-        default:
-            sprintf( str, "OTHER");
-    }
-}
-
-
-
-
-
-
-void MM_MidiTrack_print( MM_MidiTrack *mt )
-{
-    printf( BOLDWHITE "TRACK:" RESET "\n---------------------------\n");
-    printf( TAB WHITE "Chunk Size:" RESET BOLDWHITE" %li" RESET " bytes\n", mt->length );
-    printf( TAB WHITE "Number of Events: %li \n" RESET, mt->n_events );
-
-    for (int i = 0; i < mt->n_events; i++ ){
-        MM_MidiEvent_print( &(mt->event_arr[i]) );
-    }
-
-    printf("---------------------------\n");
-    
-}
-
-void MM_File_free( MM_Midi_File *self )
-{
-    if (self->filepath) free(self->filepath);
-    if (self->track.event_arr) free(self->track.event_arr);
-}
-
-void MM_File_print( MM_Midi_File *file )
-{
-    MM_Header_print( &(file->header));
-    MM_MidiTrack_print( &(file->track));
-}
-
-int MM_File_init( MM_Midi_File *f, char *file_path )
-{
-
-    f->filepath = strdup(file_path);
-    // Set format = 0 and ntrks = 1 by convention for single-track
-    f->header.format = 0;
-    f->header.ntrks = 1;
-    f->length = 0;
-
-    FILE *fileptr;
-    fileptr = fopen( file_path, "rb" );
-    _Byte * buffer = 0;
-    size_t length;
-
-
-    int freadres = 0;
-    
-    if (fileptr)
-    {
-        fseek (fileptr, 0, SEEK_END);
-        length = ftell (fileptr);
-
-        fseek (fileptr, 0, SEEK_SET);
-        buffer = malloc (length);
-
-        if (buffer)
-        {
-            // fread returns read bytes.
-            freadres = fread (buffer, 1, length, fileptr);
-            log_info(GREEN "MM_File_init()" RESET " Read %i bytes.\n", freadres);
-        }
-
-        fclose (fileptr);
-    }
-
-    f->length = length;
-    f->header = _midi_header_read( buffer );
-    MM_MidiTrack_read( &(f->track), buffer, 14, length );
-    f->track.total_beats = (f->track.total_ticks / f->header.ppqn) + 1;
-    
-    free( buffer );
-
-    log_info( "MM_File : parsed %s : %ld bytes, got %ld events.",
-        file_path,
-        f->track.length,
-        f->track.n_events );
-
-    // log header info
-    log_info( "MM_Header: Chunk Size: %zu, PPQN: %i.",
-        f->header.length,
-        f->header.ppqn );
-    
-    // HERE 
-    MM_MidiEvent_LList _evt_list;
-    MM_MidiEvent_LList_init( &_evt_list );
-    MM_MidiEvent_LList_from_array( &_evt_list, f->track.event_arr, f->track.n_events );
-
-    return 0;
-}
-
-int MM_MidiEvent_LList_init(MM_MidiEvent_LList *s)
-{
-    s->length = 0;
-    s->first = NULL;
-    s->last = NULL;
-
-    return 0;
-}
-
-
-// Kenny Loggings
-void __dump_list_to_log(MM_Midi_File *f, MM_MidiEvent_LList *l) {
-    char note_str[8];
-    char status_str[16];
-    int e_counter = 0;
-    MM_MidiEvent_LList_Node *cursor = l->first;
-
-    while (cursor) {
-        _midi_note_to_str(cursor->value->note, note_str);
-        _midi_status_code_to_str(cursor->value->status_code, status_str);
-        log_trace("EVT [%i]: ticks=%ld, note=%s, status=%s", e_counter, cursor->value->abs_ticks, note_str, status_str);
-
-        cursor = cursor->next;
-        e_counter++;
-    }
-
-    log_debug("minimidi.c > MM_MidiEvent_LList > init : Done initing with %i events.", e_counter);
-}
-
-
-int MM_MidiEvent_LList_append(MM_MidiEvent_LList*self, MM_MidiEvent *v)
-{
-    MM_MidiEvent_LList_Node *node = (MM_MidiEvent_LList_Node *)malloc(sizeof( MM_MidiEvent_LList_Node ));
-    MM_MidiEvent_LList_Node *aux = 0;
-
+    MM_MidiEvent_LList_Node *node = malloc(sizeof(*node));
+    if (!node) return -1;
+    node->value = event;
     node->next = NULL;
-    node->value = v;
+    if (list->last) list->last->next = node;
+    else list->first = node;
+    list->last = node;
+    list->length++;
+    return 0;
+}
 
-    // list is empty
-    if (!self->first)
-    {
-        self->last = node;
-        self->first = node;
-        node->next = NULL;
+int MM_File_init(MM_Midi_File *file, const char *file_path)
+{
+    FILE *stream = NULL;
+    uint8_t *contents = NULL;
+    long file_length;
+    size_t position;
+    size_t track_index;
+    EventVector events = {0};
+    uint64_t total_ticks = 0;
+    int result = -1;
 
-    } else
-    {
-        aux = self->last;
-        self->last = node;
-        aux->next = node;
+    if (!file || !file_path) return -1;
+    memset(file, 0, sizeof(*file));
+    MM_MidiEvent_LList_init(&file->events);
+    stream = fopen(file_path, "rb");
+    if (!stream) {
+        midi_error(file_path, "cannot open file: %s", strerror(errno));
+        goto done;
+    }
+    if (fseek(stream, 0, SEEK_END) != 0 || (file_length = ftell(stream)) < 0
+        || fseek(stream, 0, SEEK_SET) != 0) {
+        midi_error(file_path, "cannot measure file");
+        goto done;
+    }
+    if ((size_t)file_length < 14) {
+        midi_error(file_path, "file is truncated");
+        goto done;
+    }
+    contents = malloc((size_t)file_length);
+    if (!contents || fread(contents, 1, (size_t)file_length, stream) != (size_t)file_length) {
+        midi_error(file_path, "cannot read file");
+        goto done;
+    }
+    if (memcmp(contents, "MThd", 4) != 0 || read_be32(contents + 4) < 6) {
+        midi_error(file_path, "missing or invalid MThd header");
+        goto done;
     }
 
-    self->length++;
-    return 0;
-}
-
-void _recurse_and_destroy( MM_MidiEvent_LList_Node *node)
-{
-    if (node->next)
-    {
-        _recurse_and_destroy(node->next);
+    file->header.length = read_be32(contents + 4);
+    file->header.format = read_be16(contents + 8);
+    file->header.ntrks = read_be16(contents + 10);
+    file->header.ppqn = read_be16(contents + 12);
+    if (file->header.format > 1 || file->header.ntrks == 0
+        || file->header.ppqn == 0 || (file->header.ppqn & 0x8000)) {
+        midi_error(file_path, "unsupported format or SMPTE division");
+        goto done;
     }
-    free(node);
+    position = 8 + file->header.length;
+    if (position > (size_t)file_length) goto done;
+
+    for (track_index = 0; track_index < file->header.ntrks; track_index++) {
+        uint32_t chunk_length;
+        uint64_t track_ticks = 0;
+        if (position > (size_t)file_length || (size_t)file_length - position < 8
+            || memcmp(contents + position, "MTrk", 4) != 0) {
+            midi_error(file_path, "missing or truncated track %zu", track_index + 1);
+            goto done;
+        }
+        chunk_length = read_be32(contents + position + 4);
+        position += 8;
+        if (chunk_length > (size_t)file_length - position
+            || parse_track(contents + position, chunk_length, &events, &track_ticks) != 0) {
+            midi_error(file_path, "malformed track %zu", track_index + 1);
+            goto done;
+        }
+        if (track_ticks > total_ticks) total_ticks = track_ticks;
+        position += chunk_length;
+    }
+
+    if (events.count > 1)
+        qsort(events.items, events.count, sizeof(*events.items), compare_events);
+    for (track_index = 0; track_index < events.count; track_index++) {
+        events.items[track_index].delta_ticks = track_index == 0
+            ? events.items[track_index].abs_ticks
+            : events.items[track_index].abs_ticks - events.items[track_index - 1].abs_ticks;
+    }
+    link_note_pairs(events.items, events.count);
+    file->filepath = strdup(file_path);
+    if (!file->filepath) goto done;
+    file->length = (size_t)file_length;
+    file->track.length = events.count;
+    file->track.n_events = events.count;
+    file->track.event_arr = events.items;
+    file->track.total_ticks = total_ticks;
+    file->track.total_beats = (double)total_ticks / file->header.ppqn;
+    events.items = NULL;
+    if (MM_MidiEvent_LList_from_array(&file->events, file->track.event_arr,
+                                      file->track.n_events) != 0) goto done;
+    result = 0;
+
+done:
+    if (stream) fclose(stream);
+    free(contents);
+    free(events.items);
+    if (result != 0) MM_File_free(file);
+    return result;
 }
 
-int _emptyList( MM_MidiEvent_LList* self )
+void MM_File_free(MM_Midi_File *file)
 {
-    if (self->first)
-        _recurse_and_destroy(self->first);
-    
-    self->first = NULL;
-    self->last = NULL;
-    self->length = 0;
+    if (!file) return;
+    list_clear(&file->events);
+    free(file->track.event_arr);
+    free(file->filepath);
+    memset(file, 0, sizeof(*file));
+}
+
+int MM_MidiEvent_LList_init(MM_MidiEvent_LList *list)
+{
+    if (!list) return -1;
+    memset(list, 0, sizeof(*list));
     return 0;
 }
 
-/**
- * Public again
- */
-int MM_MidiEvent_LList_destroy(MM_MidiEvent_LList*self)
+int MM_MidiEvent_LList_destroy(MM_MidiEvent_LList *list)
 {
-    _emptyList( self );
-    free(self);
+    if (!list) return -1;
+    list_clear(list);
     return 0;
 }
 
-int MM_File_get_events_in_range( MM_Midi_File *self,  MM_MidiEvent_LList *list, int start_ticks, int end_ticks, int start_note, int end_note )
+int MM_MidiEvent_LList_from_array(MM_MidiEvent_LList *list,
+                                  MM_MidiEvent *array, size_t count)
 {
-    _emptyList(list);
-    MM_MidiEvent *evt;
-
-    for (int i = 0; i < self->track.n_events; i++ )
-    {
-        evt = &(self->track.event_arr[i]);
-
-        if ( evt->abs_ticks >= start_ticks && evt->abs_ticks <= end_ticks 
-            && _midi_note_to_int( &(evt->note) ) >= start_note && _midi_note_to_int( &(evt->note) ) <= end_note )
-        {
-            MM_MidiEvent_LList_append(list, evt);
+    size_t i;
+    if (!list || (!array && count != 0)) return -1;
+    list_clear(list);
+    for (i = 0; i < count; i++) {
+        if (list_append(list, &array[i]) != 0) {
+            list_clear(list);
+            return -1;
         }
     }
-    
     return 0;
 }
 
-int MM_MidiEvent_LList_from_array( MM_MidiEvent_LList *list, MM_MidiEvent *array, size_t n_events ){
-    int err = 0;
-    for (int i = 0; i < n_events; i++){
-        err = MM_MidiEvent_LList_append(list, array + i);
-        if (err){
-            log_error("MM_MidiEvent_LList_from_array. err@ %i", i);
-            return err;
+int MM_File_get_events_in_range(MM_Midi_File *file,
+                                MM_MidiEvent_LList *list,
+                                uint64_t start_ticks,
+                                uint64_t end_ticks,
+                                int start_note,
+                                int end_note)
+{
+    size_t i;
+    if (!file || !list || start_ticks > end_ticks || start_note > end_note) return -1;
+    list_clear(list);
+    for (i = 0; i < file->track.n_events; i++) {
+        MM_MidiEvent *event = &file->track.event_arr[i];
+        if (event->abs_ticks >= start_ticks && event->abs_ticks <= end_ticks
+            && event->note_number >= start_note && event->note_number <= end_note
+            && list_append(list, event) != 0) {
+            list_clear(list);
+            return -1;
         }
     }
     return 0;
 }
 
-double MM_Util_tick_to_s(unsigned int ticks, unsigned short bpm, unsigned int ppqn) {
-    return ( 60 * (double)ticks ) / ((double)ppqn * (double)bpm );
+double MM_Util_tick_to_s(uint64_t ticks, unsigned int bpm, unsigned int ppqn)
+{
+    if (bpm == 0 || ppqn == 0) return 0.0;
+    return 60.0 * (double)ticks / ((double)ppqn * bpm);
 }
 
-unsigned int MM_Util_s_to_tick(double t_s, unsigned short bpm, unsigned int ppqn) {
-    return (unsigned int)floor(t_s * (double)bpm * (double)ppqn / 60.0);
+uint64_t MM_Util_s_to_tick(double seconds, unsigned int bpm, unsigned int ppqn)
+{
+    if (seconds <= 0.0 || bpm == 0 || ppqn == 0) return 0;
+    return (uint64_t)floor(seconds * bpm * ppqn / 60.0);
 }
