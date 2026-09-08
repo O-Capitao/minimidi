@@ -267,7 +267,7 @@ multiple assignments does not parse or store it more than once.
 | `+` / `-` | Zoom the timeline in or out. |
 | `t` | Show or hide the selected track's waveform and gain. |
 
-The grid labels rows with MIDI note numbers and marks quarter-note beat lines.
+The grid labels rows with note names and octaves and marks musical bars.
 During playback, the view follows the playhead when it moves outside the
 visible window. Resizing the terminal recreates the ncurses windows; terminals
 smaller than 40x12 show a size warning.
