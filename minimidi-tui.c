@@ -447,14 +447,38 @@ static void render_cursor(MM_TUI *tui)
     wattroff(tui->grid_derwin, COLOR_PAIR(GREEN_ON_BLK));
 }
 
-static void render_playback(MM_TUI *tui)
+static void render_transport_footer(MM_TUI *tui)
 {
-    double time = atomic_load_explicit(&tui->audio_engine->posted_audio_time,
-                                       memory_order_relaxed);
-    werase(tui->playback_derwin);
-    box(tui->playback_derwin, '|', '=');
-    mvwprintw(tui->playback_derwin, 1, 3, "-PLAYING-");
-    mvwprintw(tui->playback_derwin, 2, 3, "t=%.3f s", time);
+    uint64_t tick = active_sequence_tick(tui);
+    uint64_t ticks_per_beat = tui->project->ppqn;
+    uint64_t ticks_per_bar = ticks_per_beat * tui->beats_in_bar;
+    uint64_t bar_number = tick / ticks_per_bar + 1;
+    uint64_t beat_number = (tick % ticks_per_bar) / ticks_per_beat + 1;
+    uint64_t beat_tick = tick % ticks_per_beat;
+    double elapsed = atomic_load_explicit(&tui->audio_engine->posted_audio_time,
+                                          memory_order_relaxed);
+    unsigned int minutes = (unsigned int)(elapsed / 60.0);
+    unsigned int seconds = (unsigned int)elapsed % 60;
+    unsigned int centiseconds = (unsigned int)(elapsed * 100.0) % 100;
+    unsigned int bpm = atomic_load_explicit(&tui->audio_engine->tempo,
+                                            memory_order_relaxed);
+    int bpm_col;
+
+    attron(A_REVERSE);
+    mvhline(tui->rows - 1, 0, ' ', tui->cols);
+    mvprintw(tui->rows - 1, 1, "%03" PRIu64 "|%02" PRIu64 "|%03" PRIu64
+             "    %02u:%02u.%02u", bar_number, beat_number, beat_tick,
+             minutes, seconds, centiseconds);
+    bpm_col = 30;
+    if (bpm_col < tui->cols - 1) {
+        if (tui->bpm_focused) attron(A_BOLD);
+        mvprintw(tui->rows - 1, bpm_col, "BPM %u", bpm);
+        if (tui->bpm_focused) attroff(A_BOLD);
+        if (tui->bpm_editing && bpm_col + 10 < tui->cols)
+            mvprintw(tui->rows - 1, bpm_col + 10, "Edit:%s", tui->bpm_input);
+    }
+    attroff(A_REVERSE);
+    wnoutrefresh(stdscr);
 }
 
 static void render_track_properties(MM_TUI *tui)
@@ -473,47 +497,62 @@ static void render_track_properties(MM_TUI *tui)
 
 static void render_mixer(MM_TUI *tui)
 {
-    char status[256];
+    const int slot_count = MM_MAX_TRACKS;
     size_t i;
-    int bar_height = tui->rows - 8;
-    int cell_width = tui->cols / (int)tui->project->n_tracks;
-    if (bar_height < 1) bar_height = 1;
-    if (cell_width < 1) cell_width = 1;
+    int slot_top = 1;
+    int slot_bottom = tui->rows - 2;
     mvaddnstr(0, 0, "Mixer  Up/Down: gain  Left/Right: track  Tab: BPM  m: piano roll",
               tui->cols - 1);
-    for (i = 0; i < tui->project->n_tracks; i++) {
-        double gain = atomic_load_explicit(&tui->audio_engine->tracks_arr[i].gain,
-                                           memory_order_relaxed);
-        int filled = (int)(gain / 2.0 * bar_height + 0.5);
-        int center = (int)i * cell_width + cell_width / 2;
+    for (i = 0; i < MM_MAX_TRACKS; i++) {
+        int left = (int)i * tui->cols / slot_count;
+        int right = (int)(i + 1) * tui->cols / slot_count - 1;
+        int width;
+        int center;
         int bottom = tui->rows - 5;
+        int bar_height = bottom - (slot_top + 3) + 1;
         int row;
-        if (filled > bar_height) filled = bar_height;
-        mvprintw(2, (int)i * cell_width + 1, "%zu:%.*s", i + 1,
-                 cell_width > 5 ? cell_width - 4 : 1,
-                 tui->project->tracks_arr[i].name);
-        for (row = 0; row < bar_height; row++) {
-            int y = bottom - row;
-            if (row < filled) {
-                wattron(stdscr, COLOR_PAIR(BLACK_ON_GREEN));
-                mvaddch(y, center, ' ');
-                wattroff(stdscr, COLOR_PAIR(BLACK_ON_GREEN));
-            } else mvaddch(y, center, '|');
+
+        if (i + 1 == MM_MAX_TRACKS) right = tui->cols - 1;
+        width = right - left + 1;
+        center = left + width / 2;
+        if (width < 1) continue;
+        if (i < tui->project->n_tracks) {
+            double gain = atomic_load_explicit(&tui->audio_engine->tracks_arr[i].gain,
+                                               memory_order_relaxed);
+            int filled;
+            if (bar_height < 1) bar_height = 1;
+            filled = (int)(gain / 2.0 * bar_height + 0.5);
+            if (filled < 0) filled = 0;
+            if (filled > bar_height) filled = bar_height;
+            mvaddnstr(slot_top + 1, left + 2, tui->project->tracks_arr[i].name,
+                      width > 4 ? width - 4 : 1);
+            for (row = 0; row < bar_height; row++) {
+                int y = bottom - row;
+                if (row < filled) {
+                    wattron(stdscr, COLOR_PAIR(BLACK_ON_GREEN));
+                    mvaddch(y, center, ' ');
+                    wattroff(stdscr, COLOR_PAIR(BLACK_ON_GREEN));
+                } else mvaddch(y, center, '|');
+            }
+            wattron(stdscr, COLOR_PAIR(BLACK_ON_CYAN));
+            mvaddch(bottom - filled, center, ' ');
+            wattroff(stdscr, COLOR_PAIR(BLACK_ON_CYAN));
+            mvprintw(bottom + 1, center - 3, "%4.2f", gain);
+            if (i == tui->selected_track_index) mvaddch(bottom + 2, center, '^');
+        } else {
+            mvprintw(slot_top + 1, left + 2, "Track %zu", i + 1);
+            mvprintw(slot_top + 3, left + 2, "inactive");
         }
-        wattron(stdscr, COLOR_PAIR(BLACK_ON_CYAN));
-        mvaddch(bottom - filled, center, ' ');
-        wattroff(stdscr, COLOR_PAIR(BLACK_ON_CYAN));
-        mvprintw(bottom + 1, center - 3, "%4.2f", gain);
-        if (i == tui->selected_track_index) mvaddch(bottom + 2, center, '^');
+
+        mvaddch(slot_top, left, ACS_ULCORNER);
+        mvaddch(slot_top, right, ACS_URCORNER);
+        mvaddch(slot_bottom, left, ACS_LLCORNER);
+        mvaddch(slot_bottom, right, ACS_LRCORNER);
+        mvhline(slot_top, left + 1, ACS_HLINE, width - 2);
+        mvhline(slot_bottom, left + 1, ACS_HLINE, width - 2);
+        mvvline(slot_top + 1, left, ACS_VLINE, slot_bottom - slot_top - 1);
+        mvvline(slot_top + 1, right, ACS_VLINE, slot_bottom - slot_top - 1);
     }
-    if (tui->bpm_focused) attron(A_REVERSE);
-    snprintf(status, sizeof(status), "BPM: %u%s%s%s  Tab selects, type number + Enter",
-             atomic_load_explicit(&tui->audio_engine->tempo, memory_order_relaxed),
-             tui->bpm_editing ? " [" : "",
-             tui->bpm_editing ? tui->bpm_input : "",
-             tui->bpm_editing ? "]" : "");
-    mvaddnstr(tui->rows - 1, 1, status, tui->cols - 2);
-    if (tui->bpm_focused) attroff(A_REVERSE);
 }
 
 int MM_TUI_render(MM_TUI *tui)
@@ -538,6 +577,7 @@ int MM_TUI_render(MM_TUI *tui)
 
     if (tui->mixer_shown) {
         render_mixer(tui);
+        render_transport_footer(tui);
         wnoutrefresh(stdscr);
         doupdate();
         return 0;
@@ -550,12 +590,11 @@ int MM_TUI_render(MM_TUI *tui)
     render_grid(tui);
     render_midi(tui, &sequence->tracks[tui->selected_track_index]);
     render_cursor(tui);
-    if (tui->is_playing) render_playback(tui);
     render_track_properties(tui);
 
     wnoutrefresh(stdscr);
     wnoutrefresh(tui->grid_derwin);
-    if (tui->is_playing) wnoutrefresh(tui->playback_derwin);
+    render_transport_footer(tui);
     update_panels();
     doupdate();
     return 0;

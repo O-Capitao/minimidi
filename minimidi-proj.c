@@ -192,6 +192,7 @@ int MM_Project_init(MM_Project *project, const char *filepath)
     memset(project, 0, sizeof(*project));
     project->file = calloc(1, sizeof(*project->file));
     if (!project->file || MM_Proj_File_read(filepath, project->file) != 0) goto error;
+    if (project->file->num_track_configs > MM_MAX_TRACKS) goto error;
 
     project->ppqn = project->file->ppqn;
     project->n_tracks = project->file->num_track_configs;
