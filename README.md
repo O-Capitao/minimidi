@@ -63,9 +63,9 @@ The main components are:
 | `minimidi-log.[ch]` | Writes diagnostics to `minimidi.log`. |
 
 Project data is fully loaded before audio starts and remains stable during
-playback. The UI never mutates audio state directly: it pushes small commands
-to the ring buffer. The callback publishes time, sequence, tick, and playback
-state through atomics for the UI to read.
+playback. The UI sends transport commands through the ring buffer and updates
+tempo and track gains through atomics. The callback publishes time, sequence,
+tick, playback state, and output peak level through atomics for the UI to read.
 
 ## Requirements
 
@@ -165,7 +165,9 @@ sequence:
 Each track configuration requires both of these properties:
 
 - `wave`: one of the case-sensitive values `SQUARE`, `TRIANGLE`, or `SIN`.
-- `gain`: a finite number from `0.0` through `1.0`.
+- `gain`: the initial linear amplitude multiplier, from `0.0` through `1.0`.
+  The mixer displays and adjusts the runtime value in decibels, from `-60 dB`
+  (mute) through `+6 dB`; mixer adjustments are not written back to the YAML.
 
 A sequence requires `name`, a positive `length`, and a `tracks` mapping. It
 may use any subset of the configured tracks; omitted tracks are silent for
@@ -245,10 +247,13 @@ currently active note. Velocity, program changes, controllers, pitch bend,
 aftertouch, envelopes, and instruments are not modeled.
 
 The audio callback mixes all configured tracks into a single floating-point
-mono channel and clamps the result to `[-1.0, 1.0]`. At a sequence boundary it
-either restarts the sequence, advances to the next one, or stops after the
-last finite sequence. Pressing play after the complete arrangement has ended
-rewinds first.
+mono channel and clamps the result to `[-1.0, 1.0]`. The mixer screen shows a
+vertical peak meter in dBFS, measured on the mixed signal before that clamp, so
+readings above 0 dBFS indicate that the mix is being clipped. The meter uses
+green below -12 dBFS, yellow from -12 to -3 dBFS, and red at -3 dBFS and above.
+At a sequence boundary the engine either restarts the sequence, advances to
+the next one, or stops after the last finite sequence. Pressing play after the
+complete arrangement has ended rewinds first.
 
 Distinct MIDI paths are cached in the runtime project, so reusing a file in
 multiple assignments does not parse or store it more than once.
@@ -262,10 +267,12 @@ multiple assignments does not parse or store it more than once.
 | `Home` | Rewind to the first sequence; playback continues if it was already running. |
 | `q` | Quit. |
 | `1`–`4` | Select a configured track for the piano-roll view. |
-| Left / Right | Move the view backward or forward by one project bar. This does not seek playback. |
-| Up / Down | Move the visible MIDI-note range upward or downward. |
+| Left / Right | In the piano roll, move the view by one project bar. In the mixer, select a track; when BPM is focused, adjust tempo by 1 BPM. These view controls do not seek playback. |
+| Up / Down | In the piano roll, move the visible MIDI-note range. In the mixer, adjust the selected track gain by 1 dB. |
 | `+` / `-` | Zoom the timeline in or out. |
-| `t` | Show or hide the selected track's waveform and gain. |
+| `t` | Show or hide the selected track's waveform and configured gain. |
+| `m` | Open or close the mixer, which displays track gains in dB and the live pre-clipping output peak meter. |
+| `Tab` | In the mixer, switch focus to or from BPM control. Type digits, then press `Enter` to set a BPM from 20 to 300; `Esc` cancels editing. |
 
 The grid labels rows with note names and octaves and marks musical bars.
 During playback, the view follows the playhead when it moves outside the

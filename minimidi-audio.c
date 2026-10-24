@@ -210,6 +210,7 @@ static int pa_stream_callback(const void *input, void *output,
 void MM_AudioEngine_render(MM_AudioEngine *engine, float *out, size_t frames)
 {
     size_t frame;
+    double block_peak = 0.0;
     if (!engine || !out) return;
     process_commands(engine);
     if (engine->sequence_length_samples == 0
@@ -230,6 +231,7 @@ void MM_AudioEngine_render(MM_AudioEngine *engine, float *out, size_t frames)
             size_t track_index;
             for (track_index = 0; track_index < engine->n_tracks; track_index++)
                 mixed += audio_track_sample(&engine->tracks_arr[track_index], tick);
+            if (fabs(mixed) > block_peak) block_peak = fabs(mixed);
             if (mixed > 1.0) mixed = 1.0;
             else if (mixed < -1.0) mixed = -1.0;
             engine->sequence_samples++;
@@ -239,6 +241,12 @@ void MM_AudioEngine_render(MM_AudioEngine *engine, float *out, size_t frames)
                 advance_sequence(engine);
         }
         out[frame] = (float)mixed;
+    }
+    {
+        double peak = atomic_load_explicit(&engine->posted_output_peak,
+                                           memory_order_relaxed) * 0.85;
+        if (block_peak > peak) peak = block_peak;
+        atomic_store_explicit(&engine->posted_output_peak, peak, memory_order_relaxed);
     }
     atomic_store_explicit(&engine->posted_audio_time,
         (double)engine->total_samples / engine->project->file->sample_rate,
@@ -262,6 +270,7 @@ int MM_AudioEngine_init_offline(MM_AudioEngine *engine, MM_Project *project,
         engine->tracks_arr[i].synth.sample_rate = project->file->sample_rate;
     }
     atomic_init(&engine->posted_audio_time, 0.0);
+    atomic_init(&engine->posted_output_peak, 0.0);
     atomic_init(&engine->tempo, project->file->tempo);
     engine->rendered_tempo = project->file->tempo;
     atomic_init(&engine->posted_sequence_index, 0);

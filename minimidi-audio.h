@@ -46,6 +46,7 @@ typedef struct MM_AudioEngine {
     size_t active_sequence_index;
     unsigned int active_sequence_play;
     _Atomic(double) posted_audio_time;
+    _Atomic(double) posted_output_peak;
     _Atomic(unsigned int) tempo;
     unsigned int rendered_tempo;
     _Atomic(size_t) posted_sequence_index;

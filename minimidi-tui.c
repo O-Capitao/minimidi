@@ -3,6 +3,7 @@
 #include "minimidi-log.h"
 
 #include <inttypes.h>
+#include <math.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
@@ -23,8 +24,33 @@ enum {
     RED_ON_BLK = 1,
     GREEN_ON_BLK,
     BLACK_ON_CYAN,
-    BLACK_ON_GREEN
+    BLACK_ON_GREEN,
+    BLACK_ON_YELLOW,
+    BLACK_ON_RED,
+    METER_GREEN,
+    METER_YELLOW,
+    METER_RED
 };
+
+#define MIXER_MIN_GAIN_DB (-60.0)
+#define MIXER_MAX_GAIN_DB 6.0
+#define MIXER_METER_RANGE_DB 60.0
+
+static double gain_to_db(double gain)
+{
+    if (gain <= 0.001) return MIXER_MIN_GAIN_DB;
+    return fmax(MIXER_MIN_GAIN_DB, 20.0 * log10(gain));
+}
+
+static double db_to_gain(double db)
+{
+    return db <= MIXER_MIN_GAIN_DB ? 0.0 : pow(10.0, db / 20.0);
+}
+
+static double output_peak_to_db(double peak)
+{
+    return peak <= 0.000001 ? -120.0 : 20.0 * log10(peak);
+}
 
 static uint64_t active_sequence_tick(const MM_TUI *tui)
 {
@@ -238,7 +264,9 @@ static void handle_input(MM_TUI *tui)
                 double gain = atomic_load_explicit(
                     &tui->audio_engine->tracks_arr[tui->selected_track_index].gain,
                     memory_order_relaxed);
-                gain = gain < 1.95 ? gain + 0.05 : 2.0;
+                double db = gain_to_db(gain);
+                db = db < MIXER_MAX_GAIN_DB ? fmin(MIXER_MAX_GAIN_DB, db + 1.0) : db;
+                gain = db_to_gain(db);
                 atomic_store_explicit(
                     &tui->audio_engine->tracks_arr[tui->selected_track_index].gain,
                     gain, memory_order_relaxed);
@@ -250,7 +278,9 @@ static void handle_input(MM_TUI *tui)
                 double gain = atomic_load_explicit(
                     &tui->audio_engine->tracks_arr[tui->selected_track_index].gain,
                     memory_order_relaxed);
-                gain = gain > 0.05 ? gain - 0.05 : 0.0;
+                double db = gain_to_db(gain);
+                db = db > MIXER_MIN_GAIN_DB ? fmax(MIXER_MIN_GAIN_DB, db - 1.0) : db;
+                gain = db_to_gain(db);
                 atomic_store_explicit(
                     &tui->audio_engine->tracks_arr[tui->selected_track_index].gain,
                     gain, memory_order_relaxed);
@@ -498,14 +528,17 @@ static void render_track_properties(MM_TUI *tui)
 static void render_mixer(MM_TUI *tui)
 {
     const int slot_count = MM_MAX_TRACKS;
+    const int meter_width = 8;
+    const int track_area_width = tui->cols - meter_width;
+    const int meter_left = track_area_width;
     size_t i;
     int slot_top = 1;
     int slot_bottom = tui->rows - 2;
-    mvaddnstr(0, 0, "Mixer  Up/Down: gain  Left/Right: track  Tab: BPM  m: piano roll",
+    mvaddnstr(0, 0, "Mixer  Up/Down: gain dB  Left/Right: track  Tab: BPM  m: piano roll",
               tui->cols - 1);
     for (i = 0; i < MM_MAX_TRACKS; i++) {
-        int left = (int)i * tui->cols / slot_count;
-        int right = (int)(i + 1) * tui->cols / slot_count - 1;
+        int left = (int)i * track_area_width / slot_count;
+        int right = (int)(i + 1) * track_area_width / slot_count - 1;
         int width;
         int center;
         int bottom = tui->rows - 5;
@@ -519,25 +552,21 @@ static void render_mixer(MM_TUI *tui)
         if (i < tui->project->n_tracks) {
             double gain = atomic_load_explicit(&tui->audio_engine->tracks_arr[i].gain,
                                                memory_order_relaxed);
-            int filled;
+            double gain_db = gain_to_db(gain);
             if (bar_height < 1) bar_height = 1;
-            filled = (int)(gain / 2.0 * bar_height + 0.5);
-            if (filled < 0) filled = 0;
-            if (filled > bar_height) filled = bar_height;
             mvaddnstr(slot_top + 1, left + 2, tui->project->tracks_arr[i].name,
                       width > 4 ? width - 4 : 1);
             for (row = 0; row < bar_height; row++) {
                 int y = bottom - row;
-                if (row < filled) {
+                double row_db = MIXER_MIN_GAIN_DB
+                              + (double)(row + 1) / bar_height * -MIXER_MIN_GAIN_DB;
+                if (gain_db >= row_db) {
                     wattron(stdscr, COLOR_PAIR(BLACK_ON_GREEN));
                     mvaddch(y, center, ' ');
                     wattroff(stdscr, COLOR_PAIR(BLACK_ON_GREEN));
                 } else mvaddch(y, center, '|');
             }
-            wattron(stdscr, COLOR_PAIR(BLACK_ON_CYAN));
-            mvaddch(bottom - filled, center, ' ');
-            wattroff(stdscr, COLOR_PAIR(BLACK_ON_CYAN));
-            mvprintw(bottom + 1, center - 3, "%4.2f", gain);
+            mvprintw(bottom + 1, center - 3, "%5.1fdB", gain_db);
             if (i == tui->selected_track_index) mvaddch(bottom + 2, center, '^');
         } else {
             mvprintw(slot_top + 1, left + 2, "Track %zu", i + 1);
@@ -552,6 +581,42 @@ static void render_mixer(MM_TUI *tui)
         mvhline(slot_bottom, left + 1, ACS_HLINE, width - 2);
         mvvline(slot_top + 1, left, ACS_VLINE, slot_bottom - slot_top - 1);
         mvvline(slot_top + 1, right, ACS_VLINE, slot_bottom - slot_top - 1);
+    }
+
+    {
+        double peak = atomic_load_explicit(&tui->audio_engine->posted_output_peak,
+                                           memory_order_relaxed);
+        double peak_db = output_peak_to_db(peak);
+        int meter_x = meter_left + meter_width / 2;
+        int bottom = tui->rows - 5;
+        int bar_height = bottom - (slot_top + 3) + 1;
+        int filled;
+        int row;
+        if (bar_height < 1) bar_height = 1;
+        filled = peak_db <= -MIXER_METER_RANGE_DB ? 0
+            : (int)ceil((peak_db + MIXER_METER_RANGE_DB)
+                        / MIXER_METER_RANGE_DB * bar_height);
+        if (filled > bar_height) filled = bar_height;
+        mvaddstr(slot_top + 1, meter_left + 1, "dBFS");
+        for (row = 0; row < bar_height; row++) {
+            int y = bottom - row;
+            double row_db = -MIXER_METER_RANGE_DB
+                          + (double)(row + 1) / bar_height * MIXER_METER_RANGE_DB;
+            short color = row_db >= -3.0 ? METER_RED
+                        : row_db >= -12.0 ? METER_YELLOW : METER_GREEN;
+            if (row < filled) {
+                wattron(stdscr, COLOR_PAIR(color));
+                mvaddch(y, meter_x, ' ');
+                wattroff(stdscr, COLOR_PAIR(color));
+            } else mvaddch(y, meter_x, '|');
+        }
+        mvprintw(bottom + 1, meter_left, "%5.1fdB", peak_db);
+        mvaddch(slot_top, meter_left, ACS_ULCORNER);
+        mvaddch(slot_top, tui->cols - 1, ACS_URCORNER);
+        mvaddch(slot_bottom, meter_left, ACS_LLCORNER);
+        mvaddch(slot_bottom, tui->cols - 1, ACS_LRCORNER);
+        mvvline(slot_top + 1, meter_left, ACS_VLINE, slot_bottom - slot_top - 1);
+        mvvline(slot_top + 1, tui->cols - 1, ACS_VLINE, slot_bottom - slot_top - 1);
     }
 }
 
@@ -629,6 +694,11 @@ int MM_TUI_init(MM_TUI *tui, MM_Project *project,
         init_pair(GREEN_ON_BLK, COLOR_GREEN, COLOR_BLACK);
         init_pair(BLACK_ON_CYAN, COLOR_BLACK, COLOR_CYAN);
         init_pair(BLACK_ON_GREEN, COLOR_BLACK, COLOR_MAGENTA);
+        init_pair(BLACK_ON_YELLOW, COLOR_BLACK, COLOR_YELLOW);
+        init_pair(BLACK_ON_RED, COLOR_BLACK, COLOR_RED);
+        init_pair(METER_GREEN, COLOR_BLACK, COLOR_GREEN);
+        init_pair(METER_YELLOW, COLOR_BLACK, COLOR_YELLOW);
+        init_pair(METER_RED, COLOR_BLACK, COLOR_RED);
     }
     if (create_windows(tui) != 0) {
         MM_TUI_destroy(tui);
