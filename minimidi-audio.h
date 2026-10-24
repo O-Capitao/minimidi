@@ -22,7 +22,7 @@ typedef struct MM_Synth {
 } MM_Synth;
 
 typedef struct MM_AudioTrack {
-    double gain;
+    _Atomic(double) gain;
     MM_Synth synth;
     MM_SequenceTrack *arrangement;
     size_t clip_index;
@@ -46,6 +46,8 @@ typedef struct MM_AudioEngine {
     size_t active_sequence_index;
     unsigned int active_sequence_play;
     _Atomic(double) posted_audio_time;
+    _Atomic(unsigned int) tempo;
+    unsigned int rendered_tempo;
     _Atomic(size_t) posted_sequence_index;
     _Atomic(uint64_t) posted_sequence_tick;
     _Atomic(bool) posted_playing;

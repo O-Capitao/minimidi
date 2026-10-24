@@ -32,6 +32,11 @@ typedef struct MM_TUI {
     bool is_running;
     bool is_playing;
     bool modal_shown;
+    bool mixer_shown;
+    bool bpm_focused;
+    bool bpm_editing;
+    char bpm_input[5];
+    size_t bpm_input_length;
     bool curses_initialized;
 } MM_TUI;
 

@@ -13,13 +13,15 @@
 static uint64_t ticks_to_samples(const MM_AudioEngine *engine, uint64_t ticks)
 {
     long double numerator = (long double)ticks * 60.0L * engine->project->file->sample_rate;
-    long double denominator = (long double)engine->project->ppqn * engine->project->file->tempo;
+    long double denominator = (long double)engine->project->ppqn
+                           * atomic_load_explicit(&engine->tempo, memory_order_relaxed);
     return (uint64_t)ceill(numerator / denominator);
 }
 
 static uint64_t samples_to_ticks(const MM_AudioEngine *engine, uint64_t samples)
 {
-    long double numerator = (long double)samples * engine->project->file->tempo
+    long double numerator = (long double)samples
+                          * atomic_load_explicit(&engine->tempo, memory_order_relaxed)
                           * engine->project->ppqn;
     long double denominator = 60.0L * engine->project->file->sample_rate;
     return (uint64_t)(numerator / denominator);
@@ -146,7 +148,8 @@ static double audio_track_sample(MM_AudioTrack *track, uint64_t sequence_tick)
         else if (event->status_code == MIDI_NOTE_OFF) synth_note_off(&track->synth, event->note_number);
         track->event_index++;
     }
-    return synth_sample(&track->synth) * track->gain;
+    return synth_sample(&track->synth)
+         * atomic_load_explicit(&track->gain, memory_order_relaxed);
 }
 
 static void process_commands(MM_AudioEngine *engine)
@@ -209,6 +212,17 @@ void MM_AudioEngine_render(MM_AudioEngine *engine, float *out, size_t frames)
     size_t frame;
     if (!engine || !out) return;
     process_commands(engine);
+    if (engine->sequence_length_samples == 0
+        || engine->rendered_tempo != atomic_load_explicit(&engine->tempo, memory_order_relaxed)) {
+        MM_Sequence *sequence = &engine->project->sequence_arr[engine->active_sequence_index];
+        uint64_t tick = atomic_load_explicit(&engine->posted_sequence_tick,
+                                             memory_order_relaxed);
+        uint64_t remaining_ticks = tick < sequence->length_ticks
+            ? sequence->length_ticks - tick : 1;
+        engine->sequence_length_samples = engine->sequence_samples
+                                        + ticks_to_samples(engine, remaining_ticks);
+        engine->rendered_tempo = atomic_load_explicit(&engine->tempo, memory_order_relaxed);
+    }
     for (frame = 0; frame < frames; frame++) {
         double mixed = 0.0;
         if (engine->playing) {
@@ -243,11 +257,13 @@ int MM_AudioEngine_init_offline(MM_AudioEngine *engine, MM_Project *project,
     engine->tracks_arr = calloc(engine->n_tracks, sizeof(*engine->tracks_arr));
     if (!engine->tracks_arr) return -1;
     for (i = 0; i < engine->n_tracks; i++) {
-        engine->tracks_arr[i].gain = project->tracks_arr[i].gain;
+        atomic_init(&engine->tracks_arr[i].gain, project->tracks_arr[i].gain);
         engine->tracks_arr[i].synth.wave = project->tracks_arr[i].wave;
         engine->tracks_arr[i].synth.sample_rate = project->file->sample_rate;
     }
     atomic_init(&engine->posted_audio_time, 0.0);
+    atomic_init(&engine->tempo, project->file->tempo);
+    engine->rendered_tempo = project->file->tempo;
     atomic_init(&engine->posted_sequence_index, 0);
     atomic_init(&engine->posted_sequence_tick, 0);
     atomic_init(&engine->posted_playing, false);

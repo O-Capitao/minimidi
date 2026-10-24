@@ -7,11 +7,13 @@ PKG_LIBS := $(shell $(PKG_CONFIG) --libs $(PKGS) 2>/dev/null)
 
 CPPFLAGS += -D_POSIX_C_SOURCE=200809L $(PKG_CFLAGS)
 CFLAGS += -std=c11 -g -Wall -Wextra -Wpedantic
+DEPFLAGS = -MMD -MP
 LDLIBS += $(if $(PKG_LIBS),$(PKG_LIBS),-lncurses -lpanel -lportaudio -lyaml) -lm
 
 SOURCES = main.c minimidi.c minimidi-proj-file.c minimidi-proj.c \
 	minimidi-audio.c minimidi-rb.c minimidi-tui.c minimidi-log.c
 OBJS = $(SOURCES:.c=.o)
+DEPS = $(OBJS:.o=.d)
 OUTPUTFILE = minimidi
 TEST_OUTPUT = tests/test_refactor
 TEST_SOURCES = tests/test_refactor.c minimidi.c minimidi-proj-file.c \
@@ -25,7 +27,9 @@ $(OUTPUTFILE): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LDLIBS)
 
 %.o: %.c
-	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEPFLAGS) -c $< -o $@
+
+-include $(DEPS)
 
 $(TEST_OUTPUT): $(TEST_SOURCES)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -I. -o $@ $(TEST_SOURCES) $(LDLIBS)
@@ -40,4 +44,4 @@ sanitize:
 	ASAN_OPTIONS=detect_leaks=0 ./$(TEST_OUTPUT)
 
 clean:
-	rm -f $(OUTPUTFILE) $(wildcard *.o */*.o) $(TEST_OUTPUT)
+	rm -f $(OUTPUTFILE) $(wildcard *.o */*.o) $(wildcard *.d */*.d) $(TEST_OUTPUT)

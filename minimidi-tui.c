@@ -163,7 +163,31 @@ static void handle_input(MM_TUI *tui)
     uint64_t bar = (uint64_t)tui->project->ppqn * tui->beats_in_bar;
 
     if (key == ERR) return;
-    if (key >= '1' && key <= '4') {
+    if (tui->mixer_shown && tui->bpm_editing) {
+        if (key >= '0' && key <= '9' && tui->bpm_input_length < sizeof(tui->bpm_input) - 1) {
+            tui->bpm_input[tui->bpm_input_length++] = (char)key;
+            tui->bpm_input[tui->bpm_input_length] = '\0';
+        } else if (key == KEY_BACKSPACE || key == 127 || key == '\b') {
+            if (tui->bpm_input_length) tui->bpm_input[--tui->bpm_input_length] = '\0';
+        } else if (key == 27) {
+            tui->bpm_editing = false;
+        } else if (key == '\n' || key == KEY_ENTER) {
+            unsigned int bpm = (unsigned int)strtoul(tui->bpm_input, NULL, 10);
+            if (bpm >= 20 && bpm <= 300) {
+                atomic_store_explicit(&tui->audio_engine->tempo, bpm, memory_order_relaxed);
+            } else beep();
+            tui->bpm_editing = false;
+        }
+        return;
+    }
+    if (tui->mixer_shown && key >= '0' && key <= '9') {
+        tui->bpm_editing = true;
+        tui->bpm_input_length = 1;
+        tui->bpm_input[0] = (char)key;
+        tui->bpm_input[1] = '\0';
+        return;
+    }
+    if (!tui->mixer_shown && key >= '1' && key <= '4') {
         size_t index = (size_t)(key - '1');
         if (index < tui->project->n_tracks && index != tui->selected_track_index) {
             tui->selected_track_index = index;
@@ -190,17 +214,48 @@ static void handle_input(MM_TUI *tui)
             push_command(tui, MM_CMD_BACK_TO_BEGINNING);
             break;
         case KEY_LEFT:
-            tui->logical_start_tick = tui->logical_start_tick > bar
+            if (tui->mixer_shown && tui->bpm_focused) {
+                unsigned int bpm = atomic_load_explicit(&tui->audio_engine->tempo, memory_order_relaxed);
+                if (bpm > 20) bpm--;
+                atomic_store_explicit(&tui->audio_engine->tempo, bpm, memory_order_relaxed);
+            } else if (tui->mixer_shown) {
+                if (tui->selected_track_index > 0) tui->selected_track_index--;
+            } else tui->logical_start_tick = tui->logical_start_tick > bar
                 ? tui->logical_start_tick - bar : 0;
             break;
         case KEY_RIGHT:
-            tui->logical_start_tick += bar;
+            if (tui->mixer_shown && tui->bpm_focused) {
+                unsigned int bpm = atomic_load_explicit(&tui->audio_engine->tempo, memory_order_relaxed);
+                if (bpm < 300) bpm++;
+                atomic_store_explicit(&tui->audio_engine->tempo, bpm, memory_order_relaxed);
+            } else if (tui->mixer_shown) {
+                if (tui->selected_track_index + 1 < tui->project->n_tracks)
+                    tui->selected_track_index++;
+            } else tui->logical_start_tick += bar;
             break;
         case KEY_UP:
-            if (tui->logical_start_note < 127) tui->logical_start_note++;
+            if (tui->mixer_shown) {
+                double gain = atomic_load_explicit(
+                    &tui->audio_engine->tracks_arr[tui->selected_track_index].gain,
+                    memory_order_relaxed);
+                gain = gain < 1.95 ? gain + 0.05 : 2.0;
+                atomic_store_explicit(
+                    &tui->audio_engine->tracks_arr[tui->selected_track_index].gain,
+                    gain, memory_order_relaxed);
+                tui->project->tracks_arr[tui->selected_track_index].gain = gain;
+            } else if (tui->logical_start_note < 127) tui->logical_start_note++;
             break;
         case KEY_DOWN:
-            if (tui->logical_start_note > 0) tui->logical_start_note--;
+            if (tui->mixer_shown) {
+                double gain = atomic_load_explicit(
+                    &tui->audio_engine->tracks_arr[tui->selected_track_index].gain,
+                    memory_order_relaxed);
+                gain = gain > 0.05 ? gain - 0.05 : 0.0;
+                atomic_store_explicit(
+                    &tui->audio_engine->tracks_arr[tui->selected_track_index].gain,
+                    gain, memory_order_relaxed);
+                tui->project->tracks_arr[tui->selected_track_index].gain = gain;
+            } else if (tui->logical_start_note > 0) tui->logical_start_note--;
             break;
         case '+':
             if (tui->ticks_per_col > 1) tui->ticks_per_col /= 2;
@@ -217,6 +272,14 @@ static void handle_input(MM_TUI *tui)
                 if (tui->modal_shown) show_panel(tui->modal_panel);
                 else hide_panel(tui->modal_panel);
             }
+            break;
+        case 'm': case 'M':
+            tui->mixer_shown = !tui->mixer_shown;
+            tui->modal_shown = false;
+            if (tui->modal_panel) hide_panel(tui->modal_panel);
+            break;
+        case '\t':
+            if (tui->mixer_shown) tui->bpm_focused = !tui->bpm_focused;
             break;
         case KEY_RESIZE:
             create_windows(tui);
@@ -408,6 +471,51 @@ static void render_track_properties(MM_TUI *tui)
     mvwprintw(tui->modal_win, 5, 2, "gain:     %.2f", track->gain);
 }
 
+static void render_mixer(MM_TUI *tui)
+{
+    char status[256];
+    size_t i;
+    int bar_height = tui->rows - 8;
+    int cell_width = tui->cols / (int)tui->project->n_tracks;
+    if (bar_height < 1) bar_height = 1;
+    if (cell_width < 1) cell_width = 1;
+    mvaddnstr(0, 0, "Mixer  Up/Down: gain  Left/Right: track  Tab: BPM  m: piano roll",
+              tui->cols - 1);
+    for (i = 0; i < tui->project->n_tracks; i++) {
+        double gain = atomic_load_explicit(&tui->audio_engine->tracks_arr[i].gain,
+                                           memory_order_relaxed);
+        int filled = (int)(gain / 2.0 * bar_height + 0.5);
+        int center = (int)i * cell_width + cell_width / 2;
+        int bottom = tui->rows - 5;
+        int row;
+        if (filled > bar_height) filled = bar_height;
+        mvprintw(2, (int)i * cell_width + 1, "%zu:%.*s", i + 1,
+                 cell_width > 5 ? cell_width - 4 : 1,
+                 tui->project->tracks_arr[i].name);
+        for (row = 0; row < bar_height; row++) {
+            int y = bottom - row;
+            if (row < filled) {
+                wattron(stdscr, COLOR_PAIR(BLACK_ON_GREEN));
+                mvaddch(y, center, ' ');
+                wattroff(stdscr, COLOR_PAIR(BLACK_ON_GREEN));
+            } else mvaddch(y, center, '|');
+        }
+        wattron(stdscr, COLOR_PAIR(BLACK_ON_CYAN));
+        mvaddch(bottom - filled, center, ' ');
+        wattroff(stdscr, COLOR_PAIR(BLACK_ON_CYAN));
+        mvprintw(bottom + 1, center - 3, "%4.2f", gain);
+        if (i == tui->selected_track_index) mvaddch(bottom + 2, center, '^');
+    }
+    if (tui->bpm_focused) attron(A_REVERSE);
+    snprintf(status, sizeof(status), "BPM: %u%s%s%s  Tab selects, type number + Enter",
+             atomic_load_explicit(&tui->audio_engine->tempo, memory_order_relaxed),
+             tui->bpm_editing ? " [" : "",
+             tui->bpm_editing ? tui->bpm_input : "",
+             tui->bpm_editing ? "]" : "");
+    mvaddnstr(tui->rows - 1, 1, status, tui->cols - 2);
+    if (tui->bpm_focused) attroff(A_REVERSE);
+}
+
 int MM_TUI_render(MM_TUI *tui)
 {
     size_t sequence_index;
@@ -427,6 +535,13 @@ int MM_TUI_render(MM_TUI *tui)
     update_sizes(tui);
     sequence_index = active_sequence_index(tui);
     sequence = &tui->project->sequence_arr[sequence_index];
+
+    if (tui->mixer_shown) {
+        render_mixer(tui);
+        wnoutrefresh(stdscr);
+        doupdate();
+        return 0;
+    }
 
     render_info(tui, sequence);
     werase(tui->grid_derwin);
