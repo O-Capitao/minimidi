@@ -12,6 +12,7 @@
 typedef struct MM_Mid_Map_Entry {
     char *key;
     MM_Midi_File value;
+    uint64_t *project_event_ticks;
     UT_hash_handle hh;
 } MM_Mid_Map_Entry;
 
@@ -24,6 +25,7 @@ typedef struct MM_Track {
 
 typedef struct MM_Clip {
     MM_Midi_File *midi;
+    const uint64_t *project_event_ticks;
     uint64_t start_tick;
     uint64_t duration_ticks;
     uint64_t end_tick;

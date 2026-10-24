@@ -26,15 +26,6 @@ enum {
     BLACK_ON_GREEN
 };
 
-static uint64_t scale_tick(uint64_t tick, unsigned int source_ppqn,
-                           unsigned int project_ppqn)
-{
-    uint64_t whole = tick / source_ppqn;
-    uint64_t remainder = tick % source_ppqn;
-    return whole * project_ppqn
-         + (remainder * project_ppqn + source_ppqn / 2) / source_ppqn;
-}
-
 static uint64_t active_sequence_tick(const MM_TUI *tui)
 {
     return atomic_load_explicit(&tui->audio_engine->posted_sequence_tick,
@@ -150,8 +141,7 @@ static void snap_to_first_event(MM_TUI *tui)
             const MM_MidiEvent *event = &clip->midi->track.event_arr[event_index];
             uint64_t tick;
             if (event->status_code != MIDI_NOTE_ON) continue;
-            tick = clip->start_tick + scale_tick(event->abs_ticks,
-                clip->midi->header.ppqn, tui->project->ppqn);
+            tick = clip->start_tick + clip->project_event_ticks[event_index];
             if (tick >= clip->end_tick) continue;
             if (tick < first_tick) {
                 first_tick = tick;
@@ -334,15 +324,15 @@ static void render_midi(MM_TUI *tui, const MM_SequenceTrack *track)
                 const MM_MidiEvent *event = &clip->midi->track.event_arr[event_index];
                 uint64_t start;
                 uint64_t end;
+                size_t end_event_index;
                 int row;
                 int start_col;
                 int end_col;
                 int col;
                 if (event->status_code != MIDI_NOTE_ON || !event->next) continue;
-                start = cycle_start + scale_tick(event->abs_ticks,
-                    clip->midi->header.ppqn, tui->project->ppqn);
-                end = cycle_start + scale_tick(event->next->abs_ticks,
-                    clip->midi->header.ppqn, tui->project->ppqn);
+                end_event_index = (size_t)(event->next - clip->midi->track.event_arr);
+                start = cycle_start + clip->project_event_ticks[event_index];
+                end = cycle_start + clip->project_event_ticks[end_event_index];
                 if (start >= clip->end_tick || start >= view_end
                     || end < tui->logical_start_tick) continue;
                 if (end > clip->end_tick) end = clip->end_tick;

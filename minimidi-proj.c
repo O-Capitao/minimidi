@@ -7,18 +7,36 @@
 #include <stdlib.h>
 #include <string.h>
 
-static MM_Midi_File *midi_map_load(MM_Mid_Map_Entry **map, const char *path)
+static uint64_t scale_event_tick(uint64_t tick, unsigned int from_ppqn,
+                                 unsigned int to_ppqn)
+{
+    uint64_t quotient = tick / from_ppqn;
+    uint64_t remainder = tick % from_ppqn;
+    uint64_t scaled;
+
+    if (quotient > UINT64_MAX / to_ppqn) return UINT64_MAX;
+    quotient *= to_ppqn;
+    if (remainder > (UINT64_MAX - from_ppqn / 2) / to_ppqn) return UINT64_MAX;
+    scaled = (remainder * to_ppqn + from_ppqn / 2) / from_ppqn;
+    if (UINT64_MAX - quotient < scaled) return UINT64_MAX;
+    return quotient + scaled;
+}
+
+static MM_Mid_Map_Entry *midi_map_load(MM_Mid_Map_Entry **map,
+                                        const char *path,
+                                        unsigned int project_ppqn)
 {
     MM_Mid_Map_Entry *entry;
     MM_Midi_File file;
     char *canonical = realpath(path, NULL);
     const char *key = canonical ? canonical : path;
+    size_t i;
 
     entry = NULL;
     HASH_FIND_STR(*map, key, entry);
     if (entry) {
         free(canonical);
-        return &entry->value;
+        return entry;
     }
     if (MM_File_init(&file, key) != 0) {
         free(canonical);
@@ -31,16 +49,31 @@ static MM_Midi_File *midi_map_load(MM_Mid_Map_Entry **map, const char *path)
         return NULL;
     }
     entry->key = strdup(key);
-    if (!entry->key) {
-        MM_File_free(&file);
-        free(entry);
-        free(canonical);
-        return NULL;
+    if (!entry->key) goto error;
+    if (file.track.n_events != 0) {
+        if (file.track.n_events > SIZE_MAX / sizeof(*entry->project_event_ticks))
+            goto error;
+        entry->project_event_ticks = malloc(file.track.n_events
+                                          * sizeof(*entry->project_event_ticks));
+        if (!entry->project_event_ticks) goto error;
+        for (i = 0; i < file.track.n_events; i++) {
+            entry->project_event_ticks[i] = scale_event_tick(
+                file.track.event_arr[i].abs_ticks, file.header.ppqn, project_ppqn);
+            if (entry->project_event_ticks[i] == UINT64_MAX) goto error;
+        }
     }
     entry->value = file;
     HASH_ADD_KEYPTR(hh, *map, entry->key, strlen(entry->key), entry);
     free(canonical);
-    return &entry->value;
+    return entry;
+
+error:
+    free(entry->project_event_ticks);
+    free(entry->key);
+    free(entry);
+    MM_File_free(&file);
+    free(canonical);
+    return NULL;
 }
 
 static void midi_map_free_all(MM_Mid_Map_Entry **map)
@@ -49,6 +82,7 @@ static void midi_map_free_all(MM_Mid_Map_Entry **map)
     HASH_ITER(hh, *map, current, temporary) {
         HASH_DEL(*map, current);
         MM_File_free(&current->value);
+        free(current->project_event_ticks);
         free(current->key);
         free(current);
     }
@@ -61,8 +95,8 @@ static size_t track_index(const MM_Project *project,
     return (size_t)(config - project->file->track_configs);
 }
 
-static uint64_t scale_ticks(uint64_t ticks, unsigned int from_ppqn,
-                            unsigned int to_ppqn)
+static uint64_t scale_duration_ticks(uint64_t ticks, unsigned int from_ppqn,
+                                     unsigned int to_ppqn)
 {
     uint64_t quotient = ticks / from_ppqn;
     uint64_t remainder = ticks % from_ppqn;
@@ -111,16 +145,19 @@ static int compile_sequence(MM_Project *project, size_t sequence_index)
         for (j = 0; j < target_track->n_clips; j++) {
             MM_File_Sequence_Track_Midi_Assignment *assignment = &source_track->assignments[j];
             MM_Clip *clip = &target_track->clips[j];
-            clip->midi = midi_map_load(&project->midi_map, assignment->resolved_midi_path);
-            if (!clip->midi) {
+            MM_Mid_Map_Entry *midi_entry = midi_map_load(&project->midi_map,
+                assignment->resolved_midi_path, project->ppqn);
+            if (!midi_entry) {
                 fprintf(stderr, "%s: sequence '%s', track '%s': cannot load MIDI '%s'\n",
                         project->file->filepath, source->name, source_track->track_name,
                         assignment->midi_path);
                 return -1;
             }
-            clip->source_duration_ticks = scale_ticks(clip->midi->track.total_ticks,
-                                                       clip->midi->header.ppqn,
-                                                       project->ppqn);
+            clip->midi = &midi_entry->value;
+            clip->project_event_ticks = midi_entry->project_event_ticks;
+            clip->source_duration_ticks = scale_duration_ticks(
+                clip->midi->track.total_ticks, clip->midi->header.ppqn,
+                project->ppqn);
             if (clip->source_duration_ticks == 0 || clip->source_duration_ticks == UINT64_MAX)
                 return -1;
             clip->start_tick = assignment->start_ticks;

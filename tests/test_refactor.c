@@ -81,6 +81,8 @@ static int test_runtime_project(void)
           == project.sequence_arr[0].tracks[0].clips[1].start_tick);
     CHECK(project.sequence_arr[0].tracks[0].clips[0].midi
           == project.sequence_arr[0].tracks[0].clips[1].midi);
+    CHECK(project.sequence_arr[0].tracks[0].clips[0].project_event_ticks
+          == project.sequence_arr[0].tracks[0].clips[1].project_event_ticks);
     MM_Project_free(&project);
     return 0;
 }
@@ -182,6 +184,10 @@ static int test_format_one_and_natural_length(void)
     MM_File_free(&file);
     CHECK(MM_Project_init(&project, "tests/natural.yaml") == 0);
     CHECK(project.sequence_arr[0].tracks[0].clips[0].duration_ticks == 192);
+    CHECK(project.sequence_arr[0].tracks[0].clips[0].project_event_ticks[0] == 0);
+    CHECK(project.sequence_arr[0].tracks[0].clips[0].project_event_ticks[1] == 0);
+    CHECK(project.sequence_arr[0].tracks[0].clips[0].project_event_ticks[2] == 96);
+    CHECK(project.sequence_arr[0].tracks[0].clips[0].project_event_ticks[3] == 192);
     MM_Project_free(&project);
     CHECK(write_bytes("tests/type1.mid", midi, 10) == 0);
     CHECK(MM_File_init(&file, "tests/type1.mid") != 0);

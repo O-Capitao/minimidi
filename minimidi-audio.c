@@ -10,14 +10,6 @@
 #define PI 3.14159265358979323846
 #define BUFFER_SIZE 512
 
-static uint64_t scale_ticks(uint64_t ticks, unsigned int from_ppqn,
-                            unsigned int to_ppqn)
-{
-    uint64_t whole = ticks / from_ppqn;
-    uint64_t remainder = ticks % from_ppqn;
-    return whole * to_ppqn + (remainder * to_ppqn + from_ppqn / 2) / from_ppqn;
-}
-
 static uint64_t ticks_to_samples(const MM_AudioEngine *engine, uint64_t ticks)
 {
     long double numerator = (long double)ticks * 60.0L * engine->project->file->sample_rate;
@@ -107,8 +99,7 @@ static void engine_rewind(MM_AudioEngine *engine)
     atomic_store_explicit(&engine->posted_audio_time, 0.0, memory_order_relaxed);
 }
 
-static double audio_track_sample(MM_AudioTrack *track, uint64_t sequence_tick,
-                                 unsigned int project_ppqn)
+static double audio_track_sample(MM_AudioTrack *track, uint64_t sequence_tick)
 {
     MM_SequenceTrack *arrangement = track->arrangement;
     const MM_Clip *clip;
@@ -149,8 +140,7 @@ static double audio_track_sample(MM_AudioTrack *track, uint64_t sequence_tick,
 
     while (track->event_index < clip->midi->track.n_events) {
         MM_MidiEvent *event = &clip->midi->track.event_arr[track->event_index];
-        uint64_t event_tick = scale_ticks(event->abs_ticks, clip->midi->header.ppqn,
-                                          project_ppqn);
+        uint64_t event_tick = clip->project_event_ticks[track->event_index];
         if (event_tick > source_position) break;
         if (event->status_code == MIDI_NOTE_ON) synth_note_on(&track->synth, event->note_number);
         else if (event->status_code == MIDI_NOTE_OFF) synth_note_off(&track->synth, event->note_number);
@@ -225,8 +215,7 @@ void MM_AudioEngine_render(MM_AudioEngine *engine, float *out, size_t frames)
             uint64_t tick = samples_to_ticks(engine, engine->sequence_samples);
             size_t track_index;
             for (track_index = 0; track_index < engine->n_tracks; track_index++)
-                mixed += audio_track_sample(&engine->tracks_arr[track_index], tick,
-                                            engine->project->ppqn);
+                mixed += audio_track_sample(&engine->tracks_arr[track_index], tick);
             if (mixed > 1.0) mixed = 1.0;
             else if (mixed < -1.0) mixed = -1.0;
             engine->sequence_samples++;
