@@ -27,6 +27,8 @@ enum {
     BLACK_ON_GREEN,
     BLACK_ON_YELLOW,
     BLACK_ON_RED,
+    WHITE_ON_BLK,
+    BLACK_ON_YELLOW_CURSOR,
     METER_GREEN,
     METER_YELLOW,
     METER_RED
@@ -470,11 +472,14 @@ static void render_cursor(MM_TUI *tui)
     col = GRID_LEFT_LABELS_WIDTH
         + (int)((tick - tui->logical_start_tick) / tui->ticks_per_col);
     if (col < GRID_LEFT_LABELS_WIDTH || col >= grid_cols - 1) return;
-    wattron(tui->grid_derwin, COLOR_PAIR(GREEN_ON_BLK));
-    mvwaddch(tui->grid_derwin, grid_rows - 4, col, '^');
-    mvwaddch(tui->grid_derwin, grid_rows - 3, col, '|');
-    mvwaddch(tui->grid_derwin, grid_rows - 2, col, '|');
-    wattroff(tui->grid_derwin, COLOR_PAIR(GREEN_ON_BLK));
+    for (int row = 2; row < grid_rows - 1; row++) {
+        chtype underlying = mvwinch(tui->grid_derwin, row, col);
+        int pair = PAIR_NUMBER(underlying);
+        int cursor_pair = pair == BLACK_ON_CYAN || pair == BLACK_ON_GREEN
+            ? BLACK_ON_YELLOW_CURSOR : WHITE_ON_BLK;
+        mvwaddch(tui->grid_derwin, row, col,
+                 COLOR_PAIR(cursor_pair) | ' ');
+    }
 }
 
 static void render_transport_footer(MM_TUI *tui)
@@ -696,6 +701,8 @@ int MM_TUI_init(MM_TUI *tui, MM_Project *project,
         init_pair(BLACK_ON_GREEN, COLOR_BLACK, COLOR_MAGENTA);
         init_pair(BLACK_ON_YELLOW, COLOR_BLACK, COLOR_YELLOW);
         init_pair(BLACK_ON_RED, COLOR_BLACK, COLOR_RED);
+        init_pair(WHITE_ON_BLK, COLOR_BLACK, COLOR_WHITE);
+        init_pair(BLACK_ON_YELLOW_CURSOR, COLOR_BLACK, COLOR_YELLOW);
         init_pair(METER_GREEN, COLOR_BLACK, COLOR_GREEN);
         init_pair(METER_YELLOW, COLOR_BLACK, COLOR_YELLOW);
         init_pair(METER_RED, COLOR_BLACK, COLOR_RED);

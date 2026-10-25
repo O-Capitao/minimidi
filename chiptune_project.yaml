@@ -1,0 +1,54 @@
+name: "Pocket Circuit"
+tempo: 148
+sample_rate: 44000
+ppqn: 960
+beat_per_bar: 4
+track-config:
+  bass:
+    wave: SQUARE
+    gain: 0.58
+  lead_one:
+    wave: SQUARE
+    gain: 0.32
+  lead_two:
+    wave: TRIANGLE
+    gain: 0.28
+sequence:
+  - name: "intro"
+    length: "4B"
+    n_repeats: 1
+    tracks:
+      bass:
+        - midi: "chiptune/bass_intro.mid"
+          start: "0"
+          loop: false
+          length: "4B"
+      lead_one:
+        - midi: "chiptune/lead_one_intro.mid"
+          start: "0"
+          loop: false
+          length: "4B"
+      lead_two:
+        - midi: "chiptune/lead_two_intro.mid"
+          start: "0"
+          loop: false
+          length: "4B"
+  - name: "riff"
+    length: "2B"
+    n_repeats: 0
+    tracks:
+      bass:
+        - midi: "chiptune/bass_riff.mid"
+          start: "0"
+          loop: true
+          length: "2B"
+      lead_one:
+        - midi: "chiptune/lead_one_riff.mid"
+          start: "0"
+          loop: true
+          length: "2B"
+      lead_two:
+        - midi: "chiptune/lead_two_riff.mid"
+          start: "0"
+          loop: true
+          length: "2B"
