@@ -35,6 +35,8 @@ typedef struct MM_TUI {
     bool mixer_shown;
     bool bpm_focused;
     bool bpm_editing;
+    bool start_screen;
+    unsigned int splash_frame;
     char bpm_input[5];
     size_t bpm_input_length;
     bool curses_initialized;

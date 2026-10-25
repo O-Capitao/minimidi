@@ -20,6 +20,14 @@ static const char *ALL_NOTES[] = {
     "C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"
 };
 
+static const char *MINIMIDI_LOGO[] = {
+    "#   #    #    #   #    #    #   #    #    ####     #  ",
+    "## ##         ##  #         ## ##         #   #       ",
+    "# # #    #    # # #    #    # # #    #    #   #    #  ",
+    "#   #    #    #  ##    #    #   #    #    #   #    #  ",
+    "#   #    #    #   #    #    #   #    #    ####     #  "
+};
+
 enum {
     RED_ON_BLK = 1,
     GREEN_ON_BLK,
@@ -31,7 +39,8 @@ enum {
     BLACK_ON_YELLOW_CURSOR,
     METER_GREEN,
     METER_YELLOW,
-    METER_RED
+    METER_RED,
+    SPLASH_WHITE
 };
 
 #define MIXER_MIN_GAIN_DB (-60.0)
@@ -191,6 +200,10 @@ static void handle_input(MM_TUI *tui)
     uint64_t bar = (uint64_t)tui->project->ppqn * tui->beats_in_bar;
 
     if (key == ERR) return;
+    if (tui->start_screen) {
+        tui->start_screen = false;
+        return;
+    }
     if (tui->mixer_shown && tui->bpm_editing) {
         if (key >= '0' && key <= '9' && tui->bpm_input_length < sizeof(tui->bpm_input) - 1) {
             tui->bpm_input[tui->bpm_input_length++] = (char)key;
@@ -639,6 +652,39 @@ int MM_TUI_render(MM_TUI *tui)
     }
     if (!tui->grid_derwin || !tui->playback_derwin) return -1;
 
+    if (tui->start_screen) {
+        int logo_height = (int)(sizeof(MINIMIDI_LOGO) / sizeof(MINIMIDI_LOGO[0]));
+        int logo_width = (int)strlen(MINIMIDI_LOGO[0]);
+        int x = tui->cols > logo_width ? (tui->cols - logo_width) / 2 : 0;
+        int y = tui->rows > logo_height ? (tui->rows - logo_height) / 2 - 1 : 0;
+        erase();
+        for (int col = 1; col < tui->cols - 1; col += 3) {
+            unsigned int seed = (unsigned int)col * 17U + tui->splash_frame / 12U;
+            int dot_y = 1 + (int)(seed % (unsigned int)(tui->rows - 2));
+            if (has_colors()) attron(COLOR_PAIR(GREEN_ON_BLK) | A_DIM);
+            else attron(A_DIM);
+            mvaddch(dot_y, col, '.');
+            if (has_colors()) attroff(COLOR_PAIR(GREEN_ON_BLK) | A_DIM);
+            else attroff(A_DIM);
+        }
+        for (int row = 0; row < logo_height && y + row < tui->rows - 1; row++) {
+            if (has_colors()) attron(COLOR_PAIR(SPLASH_WHITE) | A_BOLD);
+            else attron(A_BOLD);
+            mvaddnstr(y + row, x, MINIMIDI_LOGO[row], tui->cols - x);
+            if (has_colors()) attroff(COLOR_PAIR(SPLASH_WHITE) | A_BOLD);
+            else attroff(A_BOLD);
+        }
+        if (tui->rows > 1) {
+            const char *prompt = "Press any key to continue";
+            int prompt_x = tui->cols > (int)strlen(prompt)
+                ? (tui->cols - (int)strlen(prompt)) / 2 : 0;
+            mvaddnstr(tui->rows - 2, prompt_x, prompt, tui->cols - prompt_x);
+        }
+        tui->splash_frame++;
+        refresh();
+        return 0;
+    }
+
     tui->is_playing = atomic_load_explicit(&tui->audio_engine->posted_playing,
                                            memory_order_relaxed);
     update_sizes(tui);
@@ -684,6 +730,7 @@ int MM_TUI_init(MM_TUI *tui, MM_Project *project,
     tui->beats_in_bar = project->file->beat_per_bar;
     tui->fps = 30;
     tui->is_running = true;
+    tui->start_screen = true;
 
     if (!initscr()) return -1;
     tui->curses_initialized = true;
@@ -706,6 +753,7 @@ int MM_TUI_init(MM_TUI *tui, MM_Project *project,
         init_pair(METER_GREEN, COLOR_BLACK, COLOR_GREEN);
         init_pair(METER_YELLOW, COLOR_BLACK, COLOR_YELLOW);
         init_pair(METER_RED, COLOR_BLACK, COLOR_RED);
+        init_pair(SPLASH_WHITE, COLOR_WHITE, COLOR_BLACK);
     }
     if (create_windows(tui) != 0) {
         MM_TUI_destroy(tui);
