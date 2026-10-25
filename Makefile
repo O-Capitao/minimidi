@@ -15,8 +15,8 @@ SOURCES = main.c minimidi.c minimidi-proj-file.c minimidi-proj.c \
 OBJS = $(SOURCES:.c=.o)
 DEPS = $(OBJS:.o=.d)
 OUTPUTFILE = minimidi
-TEST_OUTPUT = tests/test_refactor
-TEST_SOURCES = tests/test_refactor.c minimidi.c minimidi-proj-file.c \
+TEST_OUTPUT = tests/test_suite
+TEST_SOURCES = tests/test_suite.c minimidi.c minimidi-proj-file.c \
 	minimidi-proj.c minimidi-audio.c minimidi-rb.c minimidi-log.c
 
 .PHONY: compile clean test sanitize
@@ -44,4 +44,5 @@ sanitize:
 	ASAN_OPTIONS=detect_leaks=0 ./$(TEST_OUTPUT)
 
 clean:
-	rm -f $(OUTPUTFILE) $(wildcard *.o */*.o) $(wildcard *.d */*.d) $(TEST_OUTPUT)
+	rm -f $(OUTPUTFILE) $(wildcard *.o */*.o) $(wildcard *.d */*.d) \
+		tests/test_suite tests/test_refactor
