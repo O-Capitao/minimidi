@@ -4,6 +4,7 @@
 #include "minimidi-log.h"
 
 #include <stdio.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -93,6 +94,71 @@ static size_t track_index(const MM_Project *project,
                           const MM_File_TrackConfig *config)
 {
     return (size_t)(config - project->file->track_configs);
+}
+
+static double wave_expr_sample(const MM_WaveExpr *expr, double phase)
+{
+    size_t i;
+    double value;
+    if (expr->kind == MM_WAVE_EXPR_SUM || expr->kind == MM_WAVE_EXPR_MULTIPLY) {
+        value = expr->kind == MM_WAVE_EXPR_SUM ? 0.0 : 1.0;
+        for (i = 0; i < expr->n_children; i++) {
+            double child = wave_expr_sample(expr->children[i], phase);
+            if (expr->kind == MM_WAVE_EXPR_SUM) value += child;
+            else value *= child;
+        }
+        return value;
+    }
+    phase = fmod(phase * expr->frequency_multiplier + expr->phase / 360.0, 1.0);
+    if (phase < 0.0) phase += 1.0;
+    switch (expr->primitive) {
+        case MM_WAVE_SIN: value = sin(2.0 * 3.14159265358979323846 * phase); break;
+        case MM_WAVE_TRIANGLE: {
+            double peak = (expr->tilt + 1.0) * 0.5;
+            if (peak <= 0.0) value = 1.0 - 2.0 * phase;
+            else if (peak >= 1.0) value = -1.0 + 2.0 * phase;
+            else if (phase < peak) value = -1.0 + 2.0 * phase / peak;
+            else value = 1.0 - 2.0 * (phase - peak) / (1.0 - peak);
+            break;
+        }
+        case MM_WAVE_SQUARE:
+            if (expr->lean > 0.0 && phase < expr->lean)
+                value = -1.0 + 2.0 * phase / expr->lean;
+            else value = phase < expr->split ? 1.0 : -1.0;
+            break;
+        default: value = 0.0; break;
+    }
+    return value * expr->amplitude;
+}
+
+static int compile_wave_tables(MM_Project *project)
+{
+    size_t i, j;
+    project->n_wave_tables = project->file->num_wave_shapes;
+    project->wave_tables = calloc(project->n_wave_tables, sizeof(*project->wave_tables));
+    if (project->n_wave_tables && !project->wave_tables) return -1;
+    for (i = 0; i < project->n_wave_tables; i++) {
+        project->wave_tables[i].name = project->file->wave_shapes[i].name;
+        for (j = 0; j < MM_WAVETABLE_SIZE; j++) {
+            double sample = wave_expr_sample(project->file->wave_shapes[i].expression,
+                                             (double)j / MM_WAVETABLE_SIZE);
+            if (!isfinite(sample)) return -1;
+            project->wave_tables[i].samples[j] = sample;
+        }
+    }
+    for (i = 0; i < project->n_tracks; i++) {
+        size_t j;
+        const char *name = project->file->track_configs[i].wave_name;
+        if (!name) continue;
+        for (j = 0; j < project->n_wave_tables; j++) {
+            if (strcmp(name, project->wave_tables[j].name) == 0) {
+                project->tracks_arr[i].wavetable = &project->wave_tables[j];
+                break;
+            }
+        }
+        if (!project->tracks_arr[i].wavetable) return -1;
+    }
+    return 0;
 }
 
 static uint64_t scale_duration_ticks(uint64_t ticks, unsigned int from_ppqn,
@@ -207,6 +273,7 @@ int MM_Project_init(MM_Project *project, const char *filepath)
         project->tracks_arr[i].wave = project->file->track_configs[i].wave;
         project->tracks_arr[i].gain = project->file->track_configs[i].gain;
     }
+    if (compile_wave_tables(project) != 0) goto error;
     for (i = 0; i < project->n_sequences; i++)
         if (compile_sequence(project, i) != 0) goto error;
     return 0;
@@ -229,6 +296,7 @@ void MM_Project_free(MM_Project *project)
     }
     free(project->sequence_arr);
     free(project->tracks_arr);
+    free(project->wave_tables);
     midi_map_free_all(&project->midi_map);
     if (project->file) {
         MM_Proj_File_free(project->file);

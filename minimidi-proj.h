@@ -20,8 +20,15 @@ typedef struct MM_Track {
     MM_File_TrackConfig *config_file;
     const char *name;
     MM_WaveType wave;
+    const struct MM_Wavetable *wavetable;
     double gain;
 } MM_Track;
+
+#define MM_WAVETABLE_SIZE 2048
+typedef struct MM_Wavetable {
+    const char *name;
+    double samples[MM_WAVETABLE_SIZE];
+} MM_Wavetable;
 
 typedef struct MM_Clip {
     MM_Midi_File *midi;
@@ -54,6 +61,8 @@ typedef struct MM_Project {
     size_t n_sequences;
     MM_Track *tracks_arr;
     size_t n_tracks;
+    MM_Wavetable *wave_tables;
+    size_t n_wave_tables;
 } MM_Project;
 
 int MM_Project_init(MM_Project *project, const char *filepath);

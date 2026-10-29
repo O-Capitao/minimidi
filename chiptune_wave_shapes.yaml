@@ -1,0 +1,95 @@
+name: "Pocket Circuit Wave Shapes"
+tempo: 148
+sample_rate: 44000
+ppqn: 960
+beat_per_bar: 4
+wave_shapes:
+  BASS_BLEND:
+    sum:
+      square_fundamental:
+        type: SQUARE
+        amplitude: 0.8
+        freq_multiplier: 1
+        phase: 0
+        split: 0.42
+        lean: 0.08
+      triangle_harmonic:
+        type: TRIANGLE
+        amplitude: 0.18
+        freq_multiplier: 2
+        phase: 18
+        tilt: 0.15
+  LEAD_MULTIPLIED:
+    multiply:
+      sine_carrier:
+        type: SIN
+        amplitude: 1
+        freq_multiplier: 1
+        phase: 0
+      harmonic_color:
+        sum:
+          main:
+            type: SIN
+            amplitude: 1
+            freq_multiplier: 1
+            phase: 0
+          upper_harmonic:
+            type: SIN
+            amplitude: 0.2
+            freq_multiplier: 3
+            phase: 35
+  TILTED_TRIANGLE:
+    type: TRIANGLE
+    amplitude: 0.9
+    freq_multiplier: 1
+    phase: 0
+    tilt: -0.25
+track-config:
+  bass:
+    wave: BASS_BLEND
+    gain: 0.58
+  lead_one:
+    wave: LEAD_MULTIPLIED
+    gain: 0.32
+  lead_two:
+    wave: TILTED_TRIANGLE
+    gain: 0.28
+sequence:
+  - name: "intro"
+    length: "4B"
+    n_repeats: 1
+    tracks:
+      bass:
+        - midi: "chiptune/bass_intro.mid"
+          start: "0"
+          loop: false
+          length: "4B"
+      lead_one:
+        - midi: "chiptune/lead_one_intro.mid"
+          start: "0"
+          loop: false
+          length: "4B"
+      lead_two:
+        - midi: "chiptune/lead_two_intro.mid"
+          start: "0"
+          loop: false
+          length: "4B"
+  - name: "riff"
+    length: "2B"
+    n_repeats: 0
+    tracks:
+      bass:
+        - midi: "chiptune/bass_riff.mid"
+          start: "0"
+          loop: true
+          length: "2B"
+      lead_one:
+        - midi: "chiptune/lead_one_riff.mid"
+          start: "0"
+          loop: true
+          length: "2B"
+      lead_two:
+        - midi: "chiptune/lead_two_riff.mid"
+          start: "0"
+          loop: true
+          length: "2B"

@@ -539,7 +539,9 @@ static void render_track_properties(MM_TUI *tui)
     mvwprintw(tui->modal_win, 0, 2, " Track properties ");
     mvwprintw(tui->modal_win, 2, 2, "number:   %zu", tui->selected_track_index + 1);
     mvwprintw(tui->modal_win, 3, 2, "name:     %s", track->name);
-    mvwprintw(tui->modal_win, 4, 2, "waveform: %s", mm_wave_to_str(track->wave));
+    mvwprintw(tui->modal_win, 4, 2, "waveform: %s",
+              track->config_file->wave_name ? track->config_file->wave_name
+                                            : mm_wave_to_str(track->wave));
     mvwprintw(tui->modal_win, 5, 2, "gain:     %.2f", track->gain);
 }
 

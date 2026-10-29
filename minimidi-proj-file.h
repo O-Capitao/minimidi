@@ -13,6 +13,21 @@ typedef enum {
     MM_WAVE_SIN
 } MM_WaveType;
 
+typedef enum { MM_WAVE_EXPR_PRIMITIVE, MM_WAVE_EXPR_SUM, MM_WAVE_EXPR_MULTIPLY } MM_WaveExprType;
+typedef struct MM_WaveExpr {
+    MM_WaveExprType kind;
+    MM_WaveType primitive;
+    double amplitude, frequency_multiplier, phase, tilt, split, lean;
+    struct MM_WaveExpr **children;
+    char **child_names;
+    size_t n_children;
+} MM_WaveExpr;
+
+typedef struct MM_File_WaveShape {
+    char *name;
+    MM_WaveExpr *expression;
+} MM_File_WaveShape;
+
 const char *mm_wave_to_str(MM_WaveType type);
 bool mm_wave_from_str(const char *text, MM_WaveType *type);
 
@@ -32,6 +47,7 @@ typedef struct MM_File_Sequence_Track_Midi_Assignment {
 typedef struct MM_File_TrackConfig {
     char *name;
     MM_WaveType wave;
+    char *wave_name;
     double gain;
 } MM_File_TrackConfig;
 
@@ -61,6 +77,8 @@ typedef struct MM_File_Project {
     unsigned int beat_per_bar;
     MM_File_TrackConfig *track_configs;
     size_t num_track_configs;
+    MM_File_WaveShape *wave_shapes;
+    size_t num_wave_shapes;
     MM_File_Sequence *sequences;
     size_t num_sequences;
 } MM_File_Project;
@@ -70,5 +88,6 @@ int MM_Proj_File_parse_time(const char *text, unsigned int beats_per_bar,
 int MM_Proj_File_read(const char *filepath, MM_File_Project *project);
 void MM_Proj_File_free(MM_File_Project *project);
 int MM_Proj_File_write(const MM_File_Project *project, const char *filepath);
+void MM_WaveExpr_free(MM_WaveExpr *expression);
 
 #endif

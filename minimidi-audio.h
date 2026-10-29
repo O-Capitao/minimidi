@@ -19,6 +19,7 @@ typedef struct MM_Synth {
     uint8_t active_note;
     bool note_on;
     MM_WaveType wave;
+    const MM_Wavetable *wavetable;
 } MM_Synth;
 
 typedef struct MM_AudioTrack {
