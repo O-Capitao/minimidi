@@ -1,6 +1,6 @@
-#include "minimidi-tui.h"
+#include "tui/minimidi-tui.h"
 
-#include "minimidi-log.h"
+#include "common/minimidi-log.h"
 
 #include <inttypes.h>
 #include <locale.h>

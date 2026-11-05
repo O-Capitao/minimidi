@@ -1,6 +1,6 @@
-#include "minimidi-audio.h"
+#include "audio/minimidi-audio.h"
 
-#include "minimidi-log.h"
+#include "common/minimidi-log.h"
 
 #include <math.h>
 #include <stdio.h>

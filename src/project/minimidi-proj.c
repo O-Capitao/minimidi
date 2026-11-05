@@ -1,7 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
-#include "minimidi-proj.h"
+#include "project/minimidi-proj.h"
 
-#include "minimidi-log.h"
+#include "common/minimidi-log.h"
 
 #include <stdio.h>
 #include <math.h>

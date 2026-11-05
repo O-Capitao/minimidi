@@ -4,7 +4,7 @@
 #include <assert.h>
 #include <stdarg.h>
 #include <string.h>
-#include "minimidi-log.h"
+#include "common/minimidi-log.h"
 
 static struct {
     FILE *file;

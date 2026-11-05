@@ -1,9 +1,9 @@
 #ifndef MM_AUDIO_H
 #define MM_AUDIO_H
 
-#include "minimidi-proj.h"
-#include "minimidi-rb.h"
-#include "minimidi-transport.h"
+#include "project/minimidi-proj.h"
+#include "common/minimidi-rb.h"
+#include "common/minimidi-transport.h"
 
 #include <portaudio.h>
 #include <stdatomic.h>

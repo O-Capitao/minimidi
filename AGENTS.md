@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-MiniMIDI is a small C application kept mostly at the repository root. `main.c` wires together the project loader, audio engine, ring buffer, logger, and ncurses UI. Each subsystem uses matching source/header pairs: `minimidi.[ch]` parses MIDI data, `minimidi-proj-file.[ch]` handles YAML project files, `minimidi-proj.[ch]` builds runtime project state, `minimidi-audio.[ch]` provides synthesis and PortAudio playback, and `minimidi-tui.[ch]` implements the terminal interface. Shared definitions live in `globals.h` and `minimidi-transport.h`.
+MiniMIDI is a small C application with its entry point at `src/main.c` and supporting source/header pairs under `src/`. Modules are grouped into `midi/` (MIDI parsing), `project/` (YAML loading and runtime state), `audio/` (synthesis and playback), `tui/` (terminal interface), and `common/` (logging, ring buffer, and shared definitions). Tests live in `tests/`. `main.c` wires together the project loader, audio engine, ring buffer, logger, and ncurses UI. Each subsystem uses matching source/header pairs: `minimidi.[ch]` parses MIDI data, `minimidi-proj-file.[ch]` handles YAML project files, `minimidi-proj.[ch]` builds runtime project state, `minimidi-audio.[ch]` provides synthesis and PortAudio playback, and `minimidi-tui.[ch]` implements the terminal interface. Shared definitions live in `globals.h` and `minimidi-transport.h`.
 
 Sample `.MID` files and `test_proj.yaml` are manual test fixtures. `test_output.yaml` is example serialized output. `easylivin/midiinfo.py` is an optional MIDI inspection helper; it requires Python and `mido`.
 

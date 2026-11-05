@@ -1,4 +1,4 @@
-#include "minimidi-rb.h"
+#include "common/minimidi-rb.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>

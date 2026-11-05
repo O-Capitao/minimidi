@@ -1,8 +1,8 @@
 #ifndef MM_PROJ_H
 #define MM_PROJ_H
 
-#include "minimidi-proj-file.h"
-#include "minimidi.h"
+#include "project/minimidi-proj-file.h"
+#include "midi/minimidi.h"
 #include "uthash.h"
 
 #include <stdbool.h>
