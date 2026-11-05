@@ -1,9 +1,9 @@
 #ifndef MM_TUI_H
 #define MM_TUI_H
 
-#include "minimidi-audio.h"
-#include "minimidi-proj.h"
-#include "minimidi-rb.h"
+#include "audio/minimidi-audio.h"
+#include "project/minimidi-proj.h"
+#include "common/minimidi-rb.h"
 
 #include <ncurses.h>
 #include <panel.h>

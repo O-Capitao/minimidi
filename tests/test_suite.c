@@ -1,11 +1,11 @@
 #define _POSIX_C_SOURCE 200809L
 
-#include "minimidi-audio.h"
-#include "minimidi-proj-file.h"
-#include "minimidi-proj.h"
-#include "minimidi-rb.h"
-#include "minimidi.h"
-#include "minimidi-log.h"
+#include "audio/minimidi-audio.h"
+#include "project/minimidi-proj-file.h"
+#include "project/minimidi-proj.h"
+#include "common/minimidi-rb.h"
+#include "midi/minimidi.h"
+#include "common/minimidi-log.h"
 
 #include <math.h>
 #include <pthread.h>

@@ -1,9 +1,9 @@
-#include "minimidi-audio.h"
-#include "minimidi-log.h"
-#include "minimidi-proj.h"
-#include "minimidi-rb.h"
-#include "minimidi-tui.h"
-#include "minimidi-transport.h"
+#include "audio/minimidi-audio.h"
+#include "common/minimidi-log.h"
+#include "project/minimidi-proj.h"
+#include "common/minimidi-rb.h"
+#include "tui/minimidi-tui.h"
+#include "common/minimidi-transport.h"
 
 #include <stdio.h>
 

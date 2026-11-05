@@ -53,7 +53,7 @@ The main components are:
 
 | Component | Responsibility |
 | --- | --- |
-| `main.c` | Owns startup, shutdown, the main UI loop, and subsystem lifetimes. |
+| `src/main.c` | Owns startup, shutdown, the main UI loop, and subsystem lifetimes. |
 | `minimidi-proj-file.[ch]` | Reads, validates, and writes YAML. It retains the source spelling of time values and MIDI paths while also calculating ticks and resolved paths. |
 | `minimidi.[ch]` | Parses SMF headers and tracks, flattens MIDI tracks into a tick-sorted note-event array, and pairs note-on/note-off events for display. |
 | `minimidi-proj.[ch]` | Compiles the file model into playback-ready sequences and clips, caches each distinct MIDI file, rescales durations, sorts clips, and rejects invalid arrangements. |
