@@ -3,21 +3,34 @@
 #include "minimidi-log.h"
 
 #include <inttypes.h>
+#include <locale.h>
 #include <math.h>
 #include <stdatomic.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-#define TOP_BAR_HEIGHT 1
+#define TOP_BAR_HEIGHT 3
 #define BOTT_BAR_HEIGHT 1
-#define TOP_RIGHT_WIDTH 10
 #define GRID_LEFT_LABELS_WIDTH 7
 #define LINES_PER_SEMITONE 2
+#define PIANO_HEADER_HEIGHT 2
+#define MIN_PANE_GRID_ROWS (6 * LINES_PER_SEMITONE + 2)
+#define KEY_CTRL_UP (KEY_MAX + 1)
+#define KEY_CTRL_DOWN (KEY_MAX + 2)
 #define MIN_ROWS 12
 #define MIN_COLS 40
 
 static const char *ALL_NOTES[] = {
     "C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"
+};
+
+static const char *MINIMIDI_LOGO[] = {
+    "#   #    #    #   #    #    #   #    #    ####     #  ",
+    "## ##         ##  #         ## ##         #   #       ",
+    "# # #    #    # # #    #    # # #    #    #   #    #  ",
+    "#   #    #    #  ##    #    #   #    #    #   #    #  ",
+    "#   #    #    #   #    #    #   #    #    ####     #  "
 };
 
 enum {
@@ -31,7 +44,10 @@ enum {
     BLACK_ON_YELLOW_CURSOR,
     METER_GREEN,
     METER_YELLOW,
-    METER_RED
+    METER_RED,
+    SPLASH_WHITE,
+    FAINT_GRAY,
+    GRAY_BLOCK
 };
 
 #define MIXER_MIN_GAIN_DB (-60.0)
@@ -67,6 +83,34 @@ static size_t active_sequence_index(const MM_TUI *tui)
     return index < tui->project->n_sequences ? index : 0;
 }
 
+static void snap_to_first_event(MM_TUI *tui);
+
+static void save_focused_pane(MM_TUI *tui)
+{
+    if (!tui->n_panes || tui->mixer_shown) return;
+    MM_TUI_TrackPane *pane = &tui->panes[tui->focused_pane];
+    pane->track_index = tui->selected_track_index;
+    pane->start_tick = tui->logical_start_tick;
+    pane->start_note = tui->logical_start_note;
+}
+
+static void load_focused_pane(MM_TUI *tui)
+{
+    MM_TUI_TrackPane *pane = &tui->panes[tui->focused_pane];
+    tui->grid_derwin = pane->window;
+    tui->selected_track_index = pane->track_index;
+    tui->logical_start_tick = pane->start_tick;
+    tui->logical_start_note = pane->start_note;
+}
+
+static void set_timeline_start(MM_TUI *tui, uint64_t tick)
+{
+    tui->logical_start_tick = tick;
+    for (size_t i = 0; i < MM_MAX_TRACKS; i++) {
+        if (tui->panes[i].initialized) tui->panes[i].start_tick = tick;
+    }
+}
+
 static void destroy_windows(MM_TUI *tui)
 {
     if (tui->modal_panel) {
@@ -81,10 +125,13 @@ static void destroy_windows(MM_TUI *tui)
         delwin(tui->playback_derwin);
         tui->playback_derwin = NULL;
     }
-    if (tui->grid_derwin) {
-        delwin(tui->grid_derwin);
-        tui->grid_derwin = NULL;
+    for (size_t i = 0; i < MM_MAX_TRACKS; i++) {
+        if (tui->panes[i].window) {
+            delwin(tui->panes[i].window);
+            tui->panes[i].window = NULL;
+        }
     }
+    tui->grid_derwin = NULL;
 }
 
 static void update_sizes(MM_TUI *tui)
@@ -111,13 +158,42 @@ static int create_windows(MM_TUI *tui)
 {
     int modal_width = 34;
 
+    int header_rows = PIANO_HEADER_HEIGHT;
+    int available;
+    size_t pane_count;
+
+    save_focused_pane(tui);
     destroy_windows(tui);
     getmaxyx(stdscr, tui->rows, tui->cols);
     if (tui->rows < MIN_ROWS || tui->cols < MIN_COLS) return 0;
 
-    tui->grid_derwin = derwin(stdscr,
-        tui->rows - TOP_BAR_HEIGHT - BOTT_BAR_HEIGHT,
-        tui->cols, TOP_BAR_HEIGHT, 0);
+    available = tui->rows - header_rows - BOTT_BAR_HEIGHT;
+    pane_count = (size_t)(available / MIN_PANE_GRID_ROWS);
+    if (pane_count < 1) pane_count = 1;
+    if (pane_count > tui->project->n_tracks) pane_count = tui->project->n_tracks;
+    if (pane_count > MM_MAX_TRACKS) pane_count = MM_MAX_TRACKS;
+    tui->n_panes = pane_count;
+    if (tui->focused_pane >= pane_count) tui->focused_pane = pane_count - 1;
+    for (size_t i = 0; i < pane_count; i++) {
+        int top = header_rows + (int)i * available / (int)pane_count;
+        int bottom = header_rows + (int)(i + 1) * available / (int)pane_count;
+        MM_TUI_TrackPane *pane = &tui->panes[i];
+        pane->window = derwin(stdscr, bottom - top, tui->cols, top, 0);
+        if (!pane->window) return -1;
+        if (!pane->initialized) {
+            pane->track_index = i;
+            tui->grid_derwin = pane->window;
+            tui->selected_track_index = i;
+            tui->logical_start_tick = 0;
+            tui->logical_start_note = 0;
+            update_sizes(tui);
+            snap_to_first_event(tui);
+            pane->start_tick = tui->logical_start_tick;
+            pane->start_note = tui->logical_start_note;
+            pane->initialized = true;
+        }
+    }
+    load_focused_pane(tui);
     tui->playback_derwin = derwin(stdscr, 4, 25, 5, 10);
     if (modal_width > tui->cols - 4) modal_width = tui->cols - 4;
     tui->modal_win = newwin(7, modal_width, (tui->rows - 7) / 2,
@@ -191,6 +267,10 @@ static void handle_input(MM_TUI *tui)
     uint64_t bar = (uint64_t)tui->project->ppqn * tui->beats_in_bar;
 
     if (key == ERR) return;
+    if (tui->start_screen) {
+        tui->start_screen = false;
+        return;
+    }
     if (tui->mixer_shown && tui->bpm_editing) {
         if (key >= '0' && key <= '9' && tui->bpm_input_length < sizeof(tui->bpm_input) - 1) {
             tui->bpm_input[tui->bpm_input_length++] = (char)key;
@@ -224,6 +304,18 @@ static void handle_input(MM_TUI *tui)
         return;
     }
     switch (key) {
+        case KEY_CTRL_UP:
+        case KEY_CTRL_DOWN:
+            if (!tui->mixer_shown && tui->n_panes > 1) {
+                save_focused_pane(tui);
+                if (key == KEY_CTRL_UP && tui->focused_pane > 0)
+                    tui->focused_pane--;
+                if (key == KEY_CTRL_DOWN && tui->focused_pane + 1 < tui->n_panes)
+                    tui->focused_pane++;
+                load_focused_pane(tui);
+                update_sizes(tui);
+            }
+            break;
         case 'q': case 'Q':
             tui->is_running = false;
             break;
@@ -234,11 +326,11 @@ static void handle_input(MM_TUI *tui)
             break;
         case 's': case 'S':
             tui->is_playing = false;
-            tui->logical_start_tick = 0;
+            set_timeline_start(tui, 0);
             push_command(tui, MM_CMD_STOP);
             break;
         case KEY_HOME:
-            tui->logical_start_tick = 0;
+            set_timeline_start(tui, 0);
             push_command(tui, MM_CMD_BACK_TO_BEGINNING);
             break;
         case KEY_LEFT:
@@ -248,8 +340,8 @@ static void handle_input(MM_TUI *tui)
                 atomic_store_explicit(&tui->audio_engine->tempo, bpm, memory_order_relaxed);
             } else if (tui->mixer_shown) {
                 if (tui->selected_track_index > 0) tui->selected_track_index--;
-            } else tui->logical_start_tick = tui->logical_start_tick > bar
-                ? tui->logical_start_tick - bar : 0;
+            } else set_timeline_start(tui, tui->logical_start_tick > bar
+                ? tui->logical_start_tick - bar : 0);
             break;
         case KEY_RIGHT:
             if (tui->mixer_shown && tui->bpm_focused) {
@@ -259,7 +351,8 @@ static void handle_input(MM_TUI *tui)
             } else if (tui->mixer_shown) {
                 if (tui->selected_track_index + 1 < tui->project->n_tracks)
                     tui->selected_track_index++;
-            } else tui->logical_start_tick += bar;
+            } else if (tui->logical_start_tick <= UINT64_MAX - bar)
+                set_timeline_start(tui, tui->logical_start_tick + bar);
             break;
         case KEY_UP:
             if (tui->mixer_shown) {
@@ -306,7 +399,12 @@ static void handle_input(MM_TUI *tui)
             }
             break;
         case 'm': case 'M':
+            save_focused_pane(tui);
             tui->mixer_shown = !tui->mixer_shown;
+            if (!tui->mixer_shown) {
+                load_focused_pane(tui);
+                update_sizes(tui);
+            }
             tui->modal_shown = false;
             if (tui->modal_panel) hide_panel(tui->modal_panel);
             break;
@@ -321,20 +419,68 @@ static void handle_input(MM_TUI *tui)
     }
 }
 
+/* Size columns across every row, then spread spare space between columns. */
+static void render_header(int cols, int rows, char fields[3][3][1024])
+{
+    int widths[3] = {0};
+    int total = 0;
+    int col = 0;
+    int available = cols - 4; /* two gaps of at least two columns */
+
+    if (available < 0) return;
+    for (int i = 0; i < 3; i++) {
+        for (int row = 0; row < rows; row++) {
+            size_t length = strlen(fields[row][i]);
+            int width = length > (size_t)available ? available : (int)length;
+            if (width > widths[i]) widths[i] = width;
+        }
+        total += widths[i];
+    }
+    while (total > available) {
+        int widest = 0;
+        for (int i = 1; i < 3; i++) {
+            if (widths[i] > widths[widest]) widest = i;
+        }
+        widths[widest]--;
+        total--;
+    }
+    for (int i = 0; i < 3; i++) {
+        for (int row = 0; row < rows; row++) {
+            if (widths[i] > 0) mvaddnstr(row, col, fields[row][i], widths[i]);
+        }
+        col += widths[i];
+        if (i < 2) col += (cols - total) / 2 + (i == 1 ? (cols - total) % 2 : 0);
+    }
+}
+
 static void render_info(MM_TUI *tui, const MM_Sequence *sequence)
 {
-    char info[512];
+    char fields[3][3][1024] = {{{0}}};
     const MM_Track *track = &tui->project->tracks_arr[tui->selected_track_index];
-    const char *state = tui->is_playing ? "-PLAYING-" : "-STOPPED-";
-    int available = tui->cols - TOP_RIGHT_WIDTH;
+    const MM_SequenceTrack *sequence_track = &sequence->tracks[tui->selected_track_index];
+    uint64_t track_length_ticks = 0;
+    attr_t header_style = has_colors() ? COLOR_PAIR(FAINT_GRAY) : 0;
+    if (!has_colors() || COLORS < 256) header_style |= A_DIM;
 
-    snprintf(info, sizeof(info),
-             "project: %s . track: %zu %s . sequence: %s.",
-             tui->project->file->name, tui->selected_track_index + 1,
-             track->name, sequence->name);
-    if (available > 0) mvaddnstr(0, 0, info, available);
-    if (tui->cols >= TOP_RIGHT_WIDTH)
-        mvaddnstr(0, tui->cols - TOP_RIGHT_WIDTH, state, TOP_RIGHT_WIDTH);
+    for (size_t i = 0; i < sequence_track->n_clips; i++) {
+        if (sequence_track->clips[i].end_tick > track_length_ticks)
+            track_length_ticks = sequence_track->clips[i].end_tick;
+    }
+    attron(header_style);
+    snprintf(fields[0][0], sizeof(fields[0][0]), "Project: %s", tui->project->file->name);
+    snprintf(fields[0][1], sizeof(fields[0][1]), "File: %s", tui->project->file->filepath);
+
+    snprintf(fields[1][0], sizeof(fields[1][0]), "Sequence: %s", sequence->name);
+    snprintf(fields[1][1], sizeof(fields[1][1]), "Length: %g beats", sequence->length_beats);
+    snprintf(fields[1][2], sizeof(fields[1][2]), "Sequences: %zu", tui->project->n_sequences);
+
+    snprintf(fields[2][0], sizeof(fields[2][0]), "Track %zu / %zu",
+             tui->selected_track_index + 1, tui->project->n_tracks);
+    snprintf(fields[2][1], sizeof(fields[2][1]), "Name: %s", track->name);
+    snprintf(fields[2][2], sizeof(fields[2][2]), "Length: %g beats",
+             (double)track_length_ticks / tui->project->ppqn);
+    render_header(tui->cols, tui->mixer_shown ? 3 : 2, fields);
+    attroff(header_style);
 }
 
 static void render_note_labels(MM_TUI *tui)
@@ -397,7 +543,7 @@ static void render_grid(MM_TUI *tui)
     }
 }
 
-static void render_midi(MM_TUI *tui, const MM_SequenceTrack *track)
+static void render_midi(MM_TUI *tui, const MM_SequenceTrack *track, bool focused)
 {
     int grid_rows;
     int grid_cols;
@@ -443,13 +589,17 @@ static void render_midi(MM_TUI *tui, const MM_SequenceTrack *track)
                 if (start_col >= grid_cols - 1 || end_col < GRID_LEFT_LABELS_WIDTH)
                     continue;
                 if (end_col < start_col) end_col = start_col;
-                wattron(tui->grid_derwin, COLOR_PAIR(BLACK_ON_CYAN));
+                attr_t onset_style = has_colors()
+                    ? COLOR_PAIR(focused ? BLACK_ON_CYAN : GRAY_BLOCK) : A_REVERSE;
+                attr_t body_style = has_colors()
+                    ? COLOR_PAIR(focused ? BLACK_ON_GREEN : GRAY_BLOCK) : A_REVERSE;
+                wattron(tui->grid_derwin, onset_style);
                 mvwaddch(tui->grid_derwin, row, start_col, ' ');
-                wattroff(tui->grid_derwin, COLOR_PAIR(BLACK_ON_CYAN));
-                wattron(tui->grid_derwin, COLOR_PAIR(BLACK_ON_GREEN));
+                wattroff(tui->grid_derwin, onset_style);
+                wattron(tui->grid_derwin, body_style);
                 for (col = start_col + 1; col <= end_col && col < grid_cols - 1; col++)
                     mvwaddch(tui->grid_derwin, row, col, ' ');
-                wattroff(tui->grid_derwin, COLOR_PAIR(BLACK_ON_GREEN));
+                wattroff(tui->grid_derwin, body_style);
             }
             if (!clip->loop
                 || clip->source_duration_ticks >= clip->end_tick - cycle_start)
@@ -501,7 +651,11 @@ static void render_transport_footer(MM_TUI *tui)
 
     attron(A_REVERSE);
     mvhline(tui->rows - 1, 0, ' ', tui->cols);
-    mvprintw(tui->rows - 1, 1, "%03" PRIu64 "|%02" PRIu64 "|%03" PRIu64
+    /* ncursesw decodes these UTF-8 symbols using the terminal locale. */
+    mvaddstr(tui->rows - 1, 1, MB_CUR_MAX > 1
+             ? (tui->is_playing ? "▶" : "■")
+             : (tui->is_playing ? ">" : "#"));
+    mvprintw(tui->rows - 1, 3, "%03" PRIu64 "|%02" PRIu64 "|%03" PRIu64
              "    %02u:%02u.%02u", bar_number, beat_number, beat_tick,
              minutes, seconds, centiseconds);
     bpm_col = 30;
@@ -526,7 +680,9 @@ static void render_track_properties(MM_TUI *tui)
     mvwprintw(tui->modal_win, 0, 2, " Track properties ");
     mvwprintw(tui->modal_win, 2, 2, "number:   %zu", tui->selected_track_index + 1);
     mvwprintw(tui->modal_win, 3, 2, "name:     %s", track->name);
-    mvwprintw(tui->modal_win, 4, 2, "waveform: %s", mm_wave_to_str(track->wave));
+    mvwprintw(tui->modal_win, 4, 2, "waveform: %s",
+              track->config_file->wave_name ? track->config_file->wave_name
+                                            : mm_wave_to_str(track->wave));
     mvwprintw(tui->modal_win, 5, 2, "gain:     %.2f", track->gain);
 }
 
@@ -537,9 +693,9 @@ static void render_mixer(MM_TUI *tui)
     const int track_area_width = tui->cols - meter_width;
     const int meter_left = track_area_width;
     size_t i;
-    int slot_top = 1;
+    int slot_top = TOP_BAR_HEIGHT + 1;
     int slot_bottom = tui->rows - 2;
-    mvaddnstr(0, 0, "Mixer  Up/Down: gain dB  Left/Right: track  Tab: BPM  m: piano roll",
+    mvaddnstr(TOP_BAR_HEIGHT, 0, "Mixer  Up/Down: gain dB  Left/Right: track  Tab: BPM  m: piano roll",
               tui->cols - 1);
     for (i = 0; i < MM_MAX_TRACKS; i++) {
         int left = (int)i * track_area_width / slot_count;
@@ -639,12 +795,46 @@ int MM_TUI_render(MM_TUI *tui)
     }
     if (!tui->grid_derwin || !tui->playback_derwin) return -1;
 
+    if (tui->start_screen) {
+        int logo_height = (int)(sizeof(MINIMIDI_LOGO) / sizeof(MINIMIDI_LOGO[0]));
+        int logo_width = (int)strlen(MINIMIDI_LOGO[0]);
+        int x = tui->cols > logo_width ? (tui->cols - logo_width) / 2 : 0;
+        int y = tui->rows > logo_height ? (tui->rows - logo_height) / 2 - 1 : 0;
+        erase();
+        for (int col = 1; col < tui->cols - 1; col += 3) {
+            unsigned int seed = (unsigned int)col * 17U + tui->splash_frame / 12U;
+            int dot_y = 1 + (int)(seed % (unsigned int)(tui->rows - 2));
+            if (has_colors()) attron(COLOR_PAIR(GREEN_ON_BLK) | A_DIM);
+            else attron(A_DIM);
+            mvaddch(dot_y, col, '.');
+            if (has_colors()) attroff(COLOR_PAIR(GREEN_ON_BLK) | A_DIM);
+            else attroff(A_DIM);
+        }
+        for (int row = 0; row < logo_height && y + row < tui->rows - 1; row++) {
+            if (has_colors()) attron(COLOR_PAIR(SPLASH_WHITE) | A_BOLD);
+            else attron(A_BOLD);
+            mvaddnstr(y + row, x, MINIMIDI_LOGO[row], tui->cols - x);
+            if (has_colors()) attroff(COLOR_PAIR(SPLASH_WHITE) | A_BOLD);
+            else attroff(A_BOLD);
+        }
+        if (tui->rows > 1) {
+            const char *prompt = "Press any key to continue";
+            int prompt_x = tui->cols > (int)strlen(prompt)
+                ? (tui->cols - (int)strlen(prompt)) / 2 : 0;
+            mvaddnstr(tui->rows - 2, prompt_x, prompt, tui->cols - prompt_x);
+        }
+        tui->splash_frame++;
+        refresh();
+        return 0;
+    }
+
     tui->is_playing = atomic_load_explicit(&tui->audio_engine->posted_playing,
                                            memory_order_relaxed);
     update_sizes(tui);
     sequence_index = active_sequence_index(tui);
     sequence = &tui->project->sequence_arr[sequence_index];
 
+    render_info(tui, sequence);
     if (tui->mixer_shown) {
         render_mixer(tui);
         render_transport_footer(tui);
@@ -653,17 +843,49 @@ int MM_TUI_render(MM_TUI *tui)
         return 0;
     }
 
-    render_info(tui, sequence);
-    werase(tui->grid_derwin);
-    box(tui->grid_derwin, '|', '=');
-    render_note_labels(tui);
-    render_grid(tui);
-    render_midi(tui, &sequence->tracks[tui->selected_track_index]);
-    render_cursor(tui);
+    save_focused_pane(tui);
+    wnoutrefresh(stdscr);
+    for (size_t i = 0; i < tui->n_panes; i++) {
+        MM_TUI pane_view = *tui;
+        MM_TUI_TrackPane *pane = &tui->panes[i];
+        char label[1024];
+        uint64_t length_ticks = 0;
+        const MM_SequenceTrack *track = &sequence->tracks[pane->track_index];
+        pane_view.grid_derwin = pane->window;
+        pane_view.selected_track_index = pane->track_index;
+        pane_view.logical_start_tick = pane->start_tick;
+        pane_view.logical_start_note = pane->start_note;
+        update_sizes(&pane_view);
+        pane->start_tick = pane_view.logical_start_tick;
+        werase(pane->window);
+        box(pane->window, '|', '=');
+        render_note_labels(&pane_view);
+        render_grid(&pane_view);
+        if (i != tui->focused_pane) render_cursor(&pane_view);
+        for (size_t clip = 0; clip < track->n_clips; clip++) {
+            if (track->clips[clip].end_tick > length_ticks)
+                length_ticks = track->clips[clip].end_tick;
+        }
+        snprintf(label, sizeof(label), " %sTrack %zu / %zu | %s | Length: %g beats ",
+                 i == tui->focused_pane ? "> " : "", pane->track_index + 1,
+                 tui->project->n_tracks, tui->project->tracks_arr[pane->track_index].name,
+                 (double)length_ticks / tui->project->ppqn);
+        mvwaddnstr(pane->window, 0, 2, label, tui->cols - 4);
+        if (i != tui->focused_pane) {
+            attr_t style = has_colors() ? COLOR_PAIR(FAINT_GRAY) : 0;
+            if (!has_colors() || COLORS < 256) style |= A_DIM;
+            for (int row = 0; row < getmaxy(pane->window); row++)
+                mvwchgat(pane->window, row, 0, -1, style & A_ATTRIBUTES,
+                         has_colors() ? FAINT_GRAY : 0, NULL);
+        }
+        render_midi(&pane_view, track, i == tui->focused_pane);
+        if (i == tui->focused_pane) render_cursor(&pane_view);
+        wnoutrefresh(pane->window);
+    }
+    load_focused_pane(tui);
+    update_sizes(tui);
     render_track_properties(tui);
 
-    wnoutrefresh(stdscr);
-    wnoutrefresh(tui->grid_derwin);
     render_transport_footer(tui);
     update_panels();
     doupdate();
@@ -684,12 +906,16 @@ int MM_TUI_init(MM_TUI *tui, MM_Project *project,
     tui->beats_in_bar = project->file->beat_per_bar;
     tui->fps = 30;
     tui->is_running = true;
+    tui->start_screen = true;
 
+    setlocale(LC_CTYPE, "");
     if (!initscr()) return -1;
     tui->curses_initialized = true;
     raw();
     noecho();
     keypad(stdscr, TRUE);
+    define_key("\033[1;5A", KEY_CTRL_UP);
+    define_key("\033[1;5B", KEY_CTRL_DOWN);
     nodelay(stdscr, TRUE);
     curs_set(0);
     if (has_colors()) {
@@ -706,6 +932,9 @@ int MM_TUI_init(MM_TUI *tui, MM_Project *project,
         init_pair(METER_GREEN, COLOR_BLACK, COLOR_GREEN);
         init_pair(METER_YELLOW, COLOR_BLACK, COLOR_YELLOW);
         init_pair(METER_RED, COLOR_BLACK, COLOR_RED);
+        init_pair(SPLASH_WHITE, COLOR_WHITE, COLOR_BLACK);
+        init_pair(FAINT_GRAY, COLORS >= 256 ? 244 : COLOR_WHITE, -1);
+        init_pair(GRAY_BLOCK, COLOR_BLACK, COLORS >= 256 ? 244 : COLOR_WHITE);
     }
     if (create_windows(tui) != 0) {
         MM_TUI_destroy(tui);

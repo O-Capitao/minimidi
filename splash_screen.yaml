@@ -1,0 +1,161 @@
+name: "Retro Splash Fanfare"
+tempo: 132
+sample_rate: 44000
+ppqn: 480
+beat_per_bar: 4
+
+wave_shapes:
+  FANFARE_LEAD:
+    sum:
+      bright_fundamental:
+        type: SIN
+        amplitude: 0.82
+        freq_multiplier: 1
+        phase: 0
+      sparkle_harmonic:
+        type: SIN
+        amplitude: 0.18
+        freq_multiplier: 2
+        phase: 12
+  PULSE_BASS:
+    sum:
+      shaped_pulse:
+        type: SQUARE
+        amplitude: 0.82
+        freq_multiplier: 1
+        phase: 0
+        split: 0.42
+        lean: 0.06
+      sub_harmonic:
+        type: SIN
+        amplitude: 0.18
+        freq_multiplier: 2
+        phase: 0
+  BELL_ARPEGGIO:
+    multiply:
+      triangle_body:
+        type: TRIANGLE
+        amplitude: 0.72
+        freq_multiplier: 1
+        phase: 0
+        tilt: 0.12
+      overtone_color:
+        sum:
+          fundamental:
+            type: SIN
+            amplitude: 1
+            freq_multiplier: 1
+            phase: 0
+          upper_partial:
+            type: SIN
+            amplitude: 0.28
+            freq_multiplier: 3
+            phase: 24
+
+track-config:
+  lead:
+    wave: FANFARE_LEAD
+    gain: 0.38
+  bass:
+    wave: PULSE_BASS
+    gain: 0.34
+  arpeggio:
+    wave: BELL_ARPEGGIO
+    gain: 0.22
+
+sequence:
+  - name: "opening"
+    length: "2B"
+    n_repeats: 1
+    tracks:
+      lead:
+        - midi: "splash-midi/intro_lead.mid"
+          start: "0"
+          loop: false
+          length: "2B"
+      bass:
+        - midi: "splash-midi/intro_bass.mid"
+          start: "0"
+          loop: false
+          length: "2B"
+      arpeggio:
+        - midi: "splash-midi/intro_arp.mid"
+          start: "0"
+          loop: false
+          length: "2B"
+  - name: "main theme"
+    length: "4B"
+    n_repeats: 1
+    tracks:
+      lead:
+        - midi: "splash-midi/splash_lead.mid"
+          start: "0"
+          loop: false
+          length: "4B"
+      bass:
+        - midi: "splash-midi/splash_bass.mid"
+          start: "0"
+          loop: false
+          length: "4B"
+      arpeggio:
+        - midi: "splash-midi/splash_arp.mid"
+          start: "0"
+          loop: false
+          length: "4B"
+  - name: "rising lift"
+    length: "4B"
+    n_repeats: 1
+    tracks:
+      lead:
+        - midi: "splash-midi/lift_lead.mid"
+          start: "0"
+          loop: false
+          length: "4B"
+      bass:
+        - midi: "splash-midi/lift_bass.mid"
+          start: "0"
+          loop: false
+          length: "4B"
+      arpeggio:
+        - midi: "splash-midi/lift_arp.mid"
+          start: "0"
+          loop: false
+          length: "4B"
+  - name: "theme reprise"
+    length: "4B"
+    n_repeats: 1
+    tracks:
+      lead:
+        - midi: "splash-midi/splash_lead.mid"
+          start: "0"
+          loop: false
+          length: "4B"
+      bass:
+        - midi: "splash-midi/splash_bass.mid"
+          start: "0"
+          loop: false
+          length: "4B"
+      arpeggio:
+        - midi: "splash-midi/splash_arp.mid"
+          start: "0"
+          loop: false
+          length: "4B"
+  - name: "final stinger"
+    length: "2B"
+    n_repeats: 1
+    tracks:
+      lead:
+        - midi: "splash-midi/outro_lead.mid"
+          start: "0"
+          loop: false
+          length: "2B"
+      bass:
+        - midi: "splash-midi/outro_bass.mid"
+          start: "0"
+          loop: false
+          length: "2B"
+      arpeggio:
+        - midi: "splash-midi/outro_arp.mid"
+          start: "0"
+          loop: false
+          length: "2B"

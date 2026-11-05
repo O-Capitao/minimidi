@@ -50,7 +50,14 @@ static double synth_sample(MM_Synth *synth)
     double frequency;
     if (!synth->note_on) return 0.0;
     frequency = 440.0 * pow(2.0, ((int)synth->active_note - 69) / 12.0);
-    switch (synth->wave) {
+    if (synth->wavetable) {
+        double position = synth->phase * MM_WAVETABLE_SIZE;
+        size_t index = (size_t)position;
+        size_t next = (index + 1) % MM_WAVETABLE_SIZE;
+        double fraction = position - (double)index;
+        sample = synth->wavetable->samples[index] * (1.0 - fraction)
+               + synth->wavetable->samples[next] * fraction;
+    } else switch (synth->wave) {
         case MM_WAVE_SQUARE:
             sample = synth->phase < 0.5 ? 1.0 : -1.0;
             break;
@@ -267,6 +274,7 @@ int MM_AudioEngine_init_offline(MM_AudioEngine *engine, MM_Project *project,
     for (i = 0; i < engine->n_tracks; i++) {
         atomic_init(&engine->tracks_arr[i].gain, project->tracks_arr[i].gain);
         engine->tracks_arr[i].synth.wave = project->tracks_arr[i].wave;
+        engine->tracks_arr[i].synth.wavetable = project->tracks_arr[i].wavetable;
         engine->tracks_arr[i].synth.sample_rate = project->file->sample_rate;
     }
     atomic_init(&engine->posted_audio_time, 0.0);

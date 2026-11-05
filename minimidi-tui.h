@@ -11,11 +11,22 @@
 #include <stddef.h>
 #include <stdint.h>
 
+typedef struct MM_TUI_TrackPane {
+    WINDOW *window;
+    size_t track_index;
+    uint64_t start_tick;
+    int start_note;
+    bool initialized;
+} MM_TUI_TrackPane;
+
 typedef struct MM_TUI {
     MM_Project *project;
     MM_Ring_Buffer *cmd_queue;
     MM_AudioEngine *audio_engine;
-    WINDOW *grid_derwin;
+    WINDOW *grid_derwin; /* alias for the focused pane's window */
+    MM_TUI_TrackPane panes[MM_MAX_TRACKS];
+    size_t n_panes;
+    size_t focused_pane;
     WINDOW *playback_derwin;
     WINDOW *modal_win;
     PANEL *modal_panel;
@@ -35,6 +46,8 @@ typedef struct MM_TUI {
     bool mixer_shown;
     bool bpm_focused;
     bool bpm_editing;
+    bool start_screen;
+    unsigned int splash_frame;
     char bpm_input[5];
     size_t bpm_input_length;
     bool curses_initialized;

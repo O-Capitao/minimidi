@@ -12,6 +12,8 @@
 #include <strings.h>
 #include <yaml.h>
 
+static int grow(void **array, size_t *count, size_t item_size);
+
 const char *mm_wave_to_str(MM_WaveType type)
 {
     switch (type) {
@@ -74,6 +76,137 @@ static int parse_gain(const yaml_node_t *node, double *value)
     parsed = strtod(text, &end);
     if (errno || *end != '\0' || !isfinite(parsed)) return -1;
     *value = parsed;
+    return 0;
+}
+
+static int parse_double_node(const yaml_node_t *node, double *value)
+{
+    return parse_gain(node, value);
+}
+
+void MM_WaveExpr_free(MM_WaveExpr *expression)
+{
+    size_t i;
+    if (!expression) return;
+    for (i = 0; i < expression->n_children; i++)
+    {
+        MM_WaveExpr_free(expression->children[i]);
+        if (expression->child_names) free(expression->child_names[i]);
+    }
+    free(expression->child_names);
+    free(expression->children);
+    free(expression);
+}
+
+static MM_WaveExpr *parse_wave_expr(yaml_document_t *document, yaml_node_t *node,
+                                   unsigned int depth)
+{
+    yaml_node_pair_t *pair;
+    MM_WaveExpr *expr = NULL;
+    unsigned int seen = 0;
+    if (!node || node->type != YAML_MAPPING_NODE || depth > 32) return NULL;
+    expr = calloc(1, sizeof(*expr));
+    if (!expr) return NULL;
+    expr->amplitude = 1.0;
+    expr->frequency_multiplier = 1.0;
+    expr->split = 0.5;
+    for (pair = node->data.mapping.pairs.start; pair < node->data.mapping.pairs.top; pair++) {
+        const char *key = scalar(yaml_document_get_node(document, pair->key));
+        yaml_node_t *value = yaml_document_get_node(document, pair->value);
+        unsigned int bit = 0;
+        if (!key) goto error;
+        if (strcmp(key, "sum") == 0 || strcmp(key, "multiply") == 0) {
+            yaml_node_pair_t *child;
+            if (seen != 0 || !value || value->type != YAML_MAPPING_NODE) goto error;
+            expr->kind = strcmp(key, "sum") == 0 ? MM_WAVE_EXPR_SUM : MM_WAVE_EXPR_MULTIPLY;
+            for (child = value->data.mapping.pairs.start; child < value->data.mapping.pairs.top; child++) {
+                MM_WaveExpr *sub;
+                char **names;
+                if (!scalar(yaml_document_get_node(document, child->key))) goto error;
+                sub = parse_wave_expr(document, yaml_document_get_node(document, child->value), depth + 1);
+                if (!sub) goto error;
+                names = realloc(expr->child_names, (expr->n_children + 1) * sizeof(*names));
+                if (!names) { MM_WaveExpr_free(sub); goto error; }
+                expr->child_names = names;
+                expr->child_names[expr->n_children] = NULL;
+                if (grow((void **)&expr->children, &expr->n_children, sizeof(*expr->children)) != 0) {
+                    MM_WaveExpr_free(sub); goto error;
+                }
+                expr->children[expr->n_children - 1] = NULL;
+                expr->child_names[expr->n_children - 1] = strdup(scalar(yaml_document_get_node(document, child->key)));
+                if (!expr->child_names[expr->n_children - 1]) { MM_WaveExpr_free(sub); goto error; }
+                expr->children[expr->n_children - 1] = sub;
+            }
+            if (!expr->n_children) goto error;
+            seen = 1;
+            continue;
+        }
+        if (strcmp(key, "type") == 0) bit = 1u;
+        else if (strcmp(key, "amplitude") == 0) bit = 2u;
+        else if (strcmp(key, "freq_multiplier") == 0) bit = 4u;
+        else if (strcmp(key, "phase") == 0) bit = 8u;
+        else if (strcmp(key, "tilt") == 0) bit = 16u;
+        else if (strcmp(key, "split") == 0) bit = 32u;
+        else if (strcmp(key, "lean") == 0) bit = 64u;
+        else goto error;
+        if (seen & bit) goto error;
+        seen |= bit;
+        if (bit == 1u) {
+            if (!mm_wave_from_str(scalar(value), &expr->primitive)) goto error;
+        } else if (bit == 2u) {
+            if (parse_double_node(value, &expr->amplitude) != 0) goto error;
+        } else if (bit == 4u) {
+            if (parse_double_node(value, &expr->frequency_multiplier) != 0
+                || expr->frequency_multiplier < 1 || expr->frequency_multiplier > 64
+                || floor(expr->frequency_multiplier) != expr->frequency_multiplier) goto error;
+        } else if (bit == 8u) {
+            if (parse_double_node(value, &expr->phase) != 0) goto error;
+        } else if (bit == 16u) {
+            if (parse_double_node(value, &expr->tilt) != 0 || expr->tilt < -1 || expr->tilt > 1) goto error;
+        } else if (bit == 32u) {
+            if (parse_double_node(value, &expr->split) != 0 || expr->split < 0 || expr->split > 1) goto error;
+        } else if (bit == 64u) {
+            if (parse_double_node(value, &expr->lean) != 0 || expr->lean < 0 || expr->lean > 1) goto error;
+        }
+    }
+    if (expr->kind != MM_WAVE_EXPR_PRIMITIVE && seen == 1) return expr;
+    if ((seen & 15u) != 15u || (seen & 1u) == 0 || expr->kind != MM_WAVE_EXPR_PRIMITIVE
+        || ((seen & 16u) && expr->primitive != MM_WAVE_TRIANGLE)
+        || ((seen & 32u) && expr->primitive != MM_WAVE_SQUARE)
+        || ((seen & 16u) && expr->primitive != MM_WAVE_TRIANGLE)
+        || ((seen & 64u) && expr->primitive != MM_WAVE_SQUARE)
+        || expr->lean > expr->split) goto error;
+    return expr;
+error:
+    MM_WaveExpr_free(expr);
+    return NULL;
+}
+
+static MM_File_WaveShape *find_shape(MM_File_Project *project, const char *name)
+{
+    size_t i;
+    for (i = 0; i < project->num_wave_shapes; i++)
+        if (strcmp(project->wave_shapes[i].name, name) == 0) return &project->wave_shapes[i];
+    return NULL;
+}
+
+static int parse_wave_shapes(yaml_document_t *document, yaml_node_t *mapping,
+                             MM_File_Project *project, const char *path)
+{
+    yaml_node_pair_t *pair;
+    if (!mapping || mapping->type != YAML_MAPPING_NODE) return fail(path, "wave_shapes must be a mapping");
+    for (pair = mapping->data.mapping.pairs.start; pair < mapping->data.mapping.pairs.top; pair++) {
+        const char *name = scalar(yaml_document_get_node(document, pair->key));
+        MM_File_WaveShape *shape;
+        if (!name || !*name || mm_wave_from_str(name, &(MM_WaveType){0}) || find_shape(project, name))
+            return fail(path, "invalid or duplicate wave shape name");
+        if (grow((void **)&project->wave_shapes, &project->num_wave_shapes, sizeof(*shape)) != 0)
+            return fail(path, "out of memory");
+        shape = &project->wave_shapes[project->num_wave_shapes - 1];
+        shape->name = strdup(name);
+        shape->expression = parse_wave_expr(document, yaml_document_get_node(document, pair->value), 0);
+        if (!shape->name || !shape->expression) return fail(path, "invalid wave shape expression");
+    }
     return 0;
 }
 
@@ -214,8 +347,13 @@ static int parse_track_configs(yaml_document_t *document, yaml_node_t *mapping,
             yaml_node_t *node = yaml_document_get_node(document, field->value);
             if (!key) return fail(path, "track-config keys must be scalars");
             if (strcmp(key, "wave") == 0) {
-                if (saw_wave || !mm_wave_from_str(scalar(node), &config->wave))
+                const char *wave = scalar(node);
+                if (saw_wave || !wave || !*wave)
                     return fail(path, "invalid or duplicate track wave");
+                if (!mm_wave_from_str(wave, &config->wave)) {
+                    config->wave_name = strdup(wave);
+                    if (!config->wave_name) return fail(path, "out of memory");
+                }
                 saw_wave = true;
             } else if (strcmp(key, "gain") == 0) {
                 if (saw_gain || parse_gain(node, &config->gain) != 0
@@ -382,7 +520,7 @@ int MM_Proj_File_read(const char *filepath, MM_File_Project *project)
     yaml_parser_t parser;
     yaml_document_t document;
     yaml_node_t *root;
-    yaml_node_t *track_configs_node = NULL, *sequences_node = NULL;
+    yaml_node_t *track_configs_node = NULL, *sequences_node = NULL, *wave_shapes_node = NULL;
     yaml_node_pair_t *pair;
     bool parser_ready = false, document_ready = false;
     unsigned int seen = 0;
@@ -417,6 +555,7 @@ int MM_Proj_File_read(const char *filepath, MM_File_Project *project)
         else if (strcmp(key, "beat_per_bar") == 0) bit = 1u << 4;
         else if (strcmp(key, "track-config") == 0) bit = 1u << 5;
         else if (strcmp(key, "sequence") == 0) bit = 1u << 6;
+        else if (strcmp(key, "wave_shapes") == 0) bit = 1u << 7;
         else { fail(filepath, "unknown project property"); goto done; }
         if (seen & bit) { fail(filepath, "duplicate project property"); goto done; }
         seen |= bit;
@@ -427,20 +566,32 @@ int MM_Proj_File_read(const char *filepath, MM_File_Project *project)
         else if (bit == (1u << 4) && parse_uint(node, &project->beat_per_bar) != 0) goto invalid_scalar;
         else if (bit == (1u << 5)) track_configs_node = node;
         else if (bit == (1u << 6)) sequences_node = node;
+        else if (bit == (1u << 7)) wave_shapes_node = node;
         continue;
 invalid_scalar:
         fail(filepath, "invalid numeric project property"); goto done;
     }
-    if (seen != 0x7f || !project->name || !*project->name)
+    if ((seen & 0x7f) != 0x7f || !project->name || !*project->name)
         { fail(filepath, "all project fields are required"); goto done; }
     if (project->tempo == 0 || project->tempo > 500 || project->sample_rate < 8000
         || project->sample_rate > 384000 || project->ppqn == 0 || project->ppqn > 32767
         || project->beat_per_bar == 0 || project->beat_per_bar > 32)
         { fail(filepath, "project tempo/rate/PPQN/time signature is out of range"); goto done; }
-    if (parse_track_configs(&document, track_configs_node, project, filepath) != 0
+    if ((wave_shapes_node && parse_wave_shapes(&document, wave_shapes_node, project, filepath) != 0)
+        || parse_track_configs(&document, track_configs_node, project, filepath) != 0
         || project->num_track_configs == 0
         || parse_sequences(&document, sequences_node, project, filepath) != 0
         || project->num_sequences == 0) goto done;
+    {
+        size_t i;
+        for (i = 0; i < project->num_track_configs; i++) {
+            char *name = project->track_configs[i].wave_name;
+            if (name && !find_shape(project, name)) {
+                fail(filepath, "track references an undefined wave shape");
+                goto done;
+            }
+        }
+    }
     result = 0;
 
 done:
@@ -457,8 +608,16 @@ void MM_Proj_File_free(MM_File_Project *project)
     if (!project) return;
     free(project->name);
     free(project->filepath);
-    for (i = 0; i < project->num_track_configs; i++) free(project->track_configs[i].name);
+    for (i = 0; i < project->num_track_configs; i++) {
+        free(project->track_configs[i].name);
+        free(project->track_configs[i].wave_name);
+    }
     free(project->track_configs);
+    for (i = 0; i < project->num_wave_shapes; i++) {
+        free(project->wave_shapes[i].name);
+        MM_WaveExpr_free(project->wave_shapes[i].expression);
+    }
+    free(project->wave_shapes);
     for (i = 0; i < project->num_sequences; i++) {
         MM_File_Sequence *sequence = &project->sequences[i];
         free(sequence->name);
@@ -516,6 +675,41 @@ static int emit_sequence(yaml_emitter_t *emitter, bool start)
     return yaml_emitter_emit(emitter, &event);
 }
 
+static int emit_number(yaml_emitter_t *emitter, double value)
+{
+    char number[64];
+    snprintf(number, sizeof(number), "%.17g", value);
+    return emit_scalar(emitter, number, YAML_PLAIN_SCALAR_STYLE);
+}
+
+static int emit_wave_expr(yaml_emitter_t *emitter, const MM_WaveExpr *expr)
+{
+    size_t i;
+    if (expr->kind != MM_WAVE_EXPR_PRIMITIVE) {
+        if (!emit_mapping(emitter, true)
+            || !emit_scalar(emitter, expr->kind == MM_WAVE_EXPR_SUM ? "sum" : "multiply", YAML_PLAIN_SCALAR_STYLE)
+            || !emit_mapping(emitter, true)) return 0;
+        for (i = 0; i < expr->n_children; i++) {
+            if (!emit_scalar(emitter, expr->child_names[i], YAML_PLAIN_SCALAR_STYLE)
+                || !emit_wave_expr(emitter, expr->children[i])) return 0;
+        }
+        return emit_mapping(emitter, false) && emit_mapping(emitter, false);
+    }
+    if (!emit_mapping(emitter, true)
+        || !emit_pair(emitter, "type", mm_wave_to_str(expr->primitive))
+        || !emit_scalar(emitter, "amplitude", YAML_PLAIN_SCALAR_STYLE) || !emit_number(emitter, expr->amplitude)
+        || !emit_scalar(emitter, "freq_multiplier", YAML_PLAIN_SCALAR_STYLE) || !emit_number(emitter, expr->frequency_multiplier)
+        || !emit_scalar(emitter, "phase", YAML_PLAIN_SCALAR_STYLE) || !emit_number(emitter, expr->phase)) return 0;
+    if (expr->primitive == MM_WAVE_TRIANGLE && expr->tilt != 0.0) {
+        if (!emit_scalar(emitter, "tilt", YAML_PLAIN_SCALAR_STYLE) || !emit_number(emitter, expr->tilt)) return 0;
+    }
+    if (expr->primitive == MM_WAVE_SQUARE) {
+        if ((expr->split != 0.5 && (!emit_scalar(emitter, "split", YAML_PLAIN_SCALAR_STYLE) || !emit_number(emitter, expr->split)))
+            || (expr->lean != 0.0 && (!emit_scalar(emitter, "lean", YAML_PLAIN_SCALAR_STYLE) || !emit_number(emitter, expr->lean)))) return 0;
+    }
+    return emit_mapping(emitter, false);
+}
+
 int MM_Proj_File_write(const MM_File_Project *project, const char *filepath)
 {
     FILE *stream;
@@ -540,13 +734,22 @@ int MM_Proj_File_write(const MM_File_Project *project, const char *filepath)
     snprintf(number, sizeof(number), "%u", project->sample_rate); EMIT(emit_pair(&emitter, "sample_rate", number));
     snprintf(number, sizeof(number), "%u", project->ppqn); EMIT(emit_pair(&emitter, "ppqn", number));
     snprintf(number, sizeof(number), "%u", project->beat_per_bar); EMIT(emit_pair(&emitter, "beat_per_bar", number));
+    if (project->num_wave_shapes) {
+        EMIT(emit_scalar(&emitter, "wave_shapes", YAML_PLAIN_SCALAR_STYLE));
+        EMIT(emit_mapping(&emitter, true));
+        for (i = 0; i < project->num_wave_shapes; i++) {
+            EMIT(emit_scalar(&emitter, project->wave_shapes[i].name, YAML_PLAIN_SCALAR_STYLE));
+            EMIT(emit_wave_expr(&emitter, project->wave_shapes[i].expression));
+        }
+        EMIT(emit_mapping(&emitter, false));
+    }
     EMIT(emit_scalar(&emitter, "track-config", YAML_PLAIN_SCALAR_STYLE));
     EMIT(emit_mapping(&emitter, true));
     for (i = 0; i < project->num_track_configs; i++) {
         const MM_File_TrackConfig *config = &project->track_configs[i];
         EMIT(emit_scalar(&emitter, config->name, YAML_PLAIN_SCALAR_STYLE));
         EMIT(emit_mapping(&emitter, true));
-        EMIT(emit_pair(&emitter, "wave", mm_wave_to_str(config->wave)));
+        EMIT(emit_pair(&emitter, "wave", config->wave_name ? config->wave_name : mm_wave_to_str(config->wave)));
         snprintf(number, sizeof(number), "%.17g", config->gain); EMIT(emit_pair(&emitter, "gain", number));
         EMIT(emit_mapping(&emitter, false));
     }
